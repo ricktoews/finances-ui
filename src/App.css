@@ -1,0 +1,609 @@
+.app-shell {
+  width: min(1220px, calc(100% - 40px));
+  margin: 0 auto;
+  padding: 56px 0;
+}
+
+.dashboard-header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 32px;
+  margin-bottom: 34px;
+}
+
+.eyebrow {
+  margin: 0 0 8px;
+  color: var(--accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.dashboard-header h1 {
+  margin: 0;
+}
+
+.header-copy {
+  max-width: 420px;
+  color: var(--muted);
+  text-align: right;
+}
+
+.dashboard-toolbar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr)) auto;
+  align-items: center;
+  gap: 18px;
+  margin-bottom: 28px;
+  padding: 16px 18px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.toolbar-metric strong {
+  display: block;
+  color: var(--text-h);
+  font-size: 1.2rem;
+  line-height: 1.2;
+  margin-top: 2px;
+}
+
+.toolbar-label,
+.year-select span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.year-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.year-select select,
+.month-select select {
+  min-width: 112px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-h);
+  background: var(--surface-raised);
+  font: inherit;
+  font-weight: 650;
+  padding: 8px 34px 8px 12px;
+}
+
+.month-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.month-select span {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-transform: uppercase;
+}
+
+.content-section,
+.status-message {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+}
+
+.content-section {
+  margin-bottom: 28px;
+  overflow: hidden;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border);
+}
+
+.section-heading h2 {
+  margin: 0;
+}
+
+.section-heading h3 {
+  color: var(--text-h);
+  font-size: 1.05rem;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.section-heading p {
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+.section-heading span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.table-shell {
+  width: 100%;
+  overflow-x: auto;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+th,
+td {
+  padding: 16px 18px;
+  border-bottom: 1px solid var(--border);
+  vertical-align: top;
+}
+
+th {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+td {
+  color: var(--text-h);
+  font-size: 0.95rem;
+}
+
+.table-shell > table > tbody > tr {
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    box-shadow 160ms ease;
+}
+
+.table-shell > table > tbody > tr:hover {
+  background: var(--row-hover);
+}
+
+.table-shell > table > tbody > tr:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.table-shell > table > tbody > tr.selected-row {
+  background: var(--selected-row);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.numeric {
+  text-align: right;
+  white-space: nowrap;
+}
+
+.source-file {
+  max-width: 260px;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.transactions-panel {
+  background: var(--surface-raised);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.expanded-row,
+.expanded-row:hover {
+  background: var(--surface-raised);
+}
+
+.expanded-row > td {
+  padding: 0;
+}
+
+.expanded-row > td::before {
+  display: none;
+}
+
+.expanded-row .table-shell {
+  overflow-x: auto;
+}
+
+.expanded-row tbody tr {
+  cursor: default;
+}
+
+.expanded-row tbody tr:hover {
+  background: transparent;
+}
+
+.transactions-heading {
+  align-items: start;
+  padding: 18px 22px;
+}
+
+.source-meta {
+  color: var(--text-h);
+  font-size: 0.9rem;
+  overflow-wrap: anywhere;
+}
+
+.panel-state {
+  padding: 22px;
+  color: var(--muted);
+}
+
+.compact-state {
+  padding: 0;
+}
+
+.income-heading,
+.expenses-heading {
+  align-items: start;
+}
+
+.income-body,
+.expenses-body {
+  display: grid;
+  gap: 24px;
+  padding: 22px;
+}
+
+.income-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.income-metrics article {
+  display: grid;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.income-metrics strong {
+  color: var(--text-h);
+  font-size: clamp(1.15rem, 2vw, 1.55rem);
+  line-height: 1.15;
+}
+
+.income-chart {
+  display: grid;
+  gap: 12px;
+}
+
+.income-bar-row {
+  display: grid;
+  grid-template-columns: 110px minmax(120px, 1fr) minmax(110px, auto);
+  align-items: center;
+  gap: 14px;
+}
+
+.category-bar-row {
+  width: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  padding: 8px;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease;
+}
+
+.category-bar-row:hover {
+  background: var(--row-hover);
+}
+
+.category-bar-row:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.category-bar-row.selected-category {
+  border-color: var(--accent);
+  background: var(--selected-row);
+}
+
+.income-bar-row span {
+  color: var(--muted);
+  font-weight: 650;
+}
+
+.income-bar-row strong {
+  color: var(--text-h);
+  text-align: right;
+}
+
+.income-bar-track {
+  height: 10px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--income-track);
+}
+
+.income-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--positive);
+}
+
+.expense-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--negative);
+}
+
+.expense-category-list {
+  display: grid;
+  gap: 6px;
+}
+
+.category-group {
+  display: grid;
+  gap: 10px;
+}
+
+.category-inline-transactions {
+  display: grid;
+  margin: 0 8px 10px;
+  padding: 8px 12px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.category-transactions {
+  display: grid;
+  gap: 14px;
+}
+
+.category-transactions-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.category-transactions-heading h3 {
+  color: var(--text-h);
+  font-size: 1.05rem;
+  margin: 0;
+}
+
+.category-transactions-heading p {
+  color: var(--muted);
+  margin: 4px 0 0;
+}
+
+.category-transactions-heading button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-h);
+  background: var(--surface-raised);
+  font: inherit;
+  font-weight: 650;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.category-transactions-heading button:hover {
+  background: var(--row-hover);
+}
+
+.income-transactions,
+.expenses-transactions,
+.category-expenses-transactions {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.income-transactions tbody tr,
+.expenses-transactions tbody tr,
+.category-expenses-transactions tbody tr {
+  cursor: default;
+}
+
+.income-transactions tbody tr:hover,
+.expenses-transactions tbody tr:hover,
+.category-expenses-transactions tbody tr:hover {
+  background: transparent;
+}
+
+.category-expenses-transactions th,
+.category-expenses-transactions td {
+  padding: 8px 10px;
+}
+
+.category-expenses-transactions th {
+  font-size: 0.68rem;
+}
+
+.category-expenses-transactions td {
+  font-size: 0.82rem;
+}
+
+.amount {
+  font-weight: 700;
+}
+
+.negative-amount {
+  color: var(--negative);
+}
+
+.positive-amount {
+  color: var(--positive);
+}
+
+.status-message,
+.empty-state {
+  padding: 24px;
+  color: var(--muted);
+}
+
+.error-message {
+  border-color: var(--danger-border);
+  color: var(--danger);
+  background: var(--danger-bg);
+}
+
+@media (max-width: 900px) {
+  .app-shell {
+    width: min(100% - 28px, 720px);
+    padding: 36px 0;
+  }
+
+  .dashboard-header {
+    display: block;
+  }
+
+  .header-copy {
+    max-width: 100%;
+    margin-top: 12px;
+    text-align: left;
+  }
+
+  .dashboard-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .year-select {
+    align-items: stretch;
+    justify-content: space-between;
+  }
+
+  .income-heading,
+  .expenses-heading {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .month-select {
+    align-items: stretch;
+    justify-content: space-between;
+  }
+
+  .income-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .income-bar-row {
+    grid-template-columns: 1fr;
+    gap: 6px;
+  }
+
+  .income-bar-row strong {
+    text-align: left;
+  }
+}
+
+@media (max-width: 680px) {
+  .section-heading {
+    padding: 18px;
+  }
+
+  .table-shell {
+    overflow: visible;
+  }
+
+  table,
+  thead,
+  tbody,
+  tr,
+  th,
+  td {
+    display: block;
+  }
+
+  thead {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+  }
+
+  tr {
+    padding: 16px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .table-shell > table > tbody > tr:hover {
+    background: transparent;
+  }
+
+  .table-shell > table > tbody > tr.selected-row {
+    background: var(--selected-row);
+    box-shadow: inset 3px 0 0 var(--accent);
+  }
+
+  .expanded-row {
+    padding: 0;
+  }
+
+  .expanded-row > td {
+    display: block;
+    padding: 0;
+  }
+
+  .expanded-row .table-shell {
+    overflow: visible;
+  }
+
+  .expanded-row .transactions-panel tr {
+    padding: 14px 18px;
+  }
+
+  .expanded-row .transactions-panel tbody tr:hover {
+    background: transparent;
+  }
+
+  tbody tr:last-child {
+    border-bottom: 0;
+  }
+
+  td {
+    display: grid;
+    grid-template-columns: minmax(120px, 38%) 1fr;
+    gap: 14px;
+    padding: 8px 0;
+    border: 0;
+  }
+
+  td::before {
+    content: attr(data-label);
+    color: var(--muted);
+    font-size: 0.78rem;
+    font-weight: 750;
+    text-transform: uppercase;
+  }
+
+  .numeric {
+    text-align: left;
+  }
+
+  .source-file {
+    max-width: none;
+  }
+}
