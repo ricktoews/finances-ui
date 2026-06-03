@@ -8,10 +8,25 @@ import './App.css';
 import { MonthlyExpenses } from './components/MonthlyExpenses';
 import { MonthlyIncome } from './components/MonthlyIncome';
 import { StatementsTable } from './components/StatementsTable';
-import type { ExpensesReport, Statement, Transaction } from './types/finance';
+import { YearlyExpensesChart } from './components/YearlyExpensesChart';
+import type { Expense, ExpensesReport, Statement, Transaction } from './types/finance';
 
 const currentYear = String(new Date().getFullYear());
 const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
+const monthKeys = Array.from({ length: 12 }, (_, index) =>
+  String(index + 1).padStart(2, '0'),
+);
+
+type MonthlyExpenseSummary = {
+  month: string;
+  total: number;
+  count: number;
+  transactions: Expense[];
+};
+
+function formatCategory(value: string): string {
+  return value.trim() || 'Uncategorized';
+}
 
 function getStatementYear(statement: Statement): string {
   return (statement.periodEnd || statement.periodStart).slice(0, 4);
@@ -43,6 +58,15 @@ function App() {
   const [expensesReport, setExpensesReport] = useState<ExpensesReport | null>(null);
   const [isExpensesLoading, setIsExpensesLoading] = useState(false);
   const [expensesError, setExpensesError] = useState<string | null>(null);
+  const [yearlyExpenseSummaries, setYearlyExpenseSummaries] = useState<
+    MonthlyExpenseSummary[]
+  >([]);
+  const [yearlyExpenseCategories, setYearlyExpenseCategories] = useState<string[]>([]);
+  const [selectedYearlyExpenseCategory, setSelectedYearlyExpenseCategory] = useState<
+    string | null
+  >(null);
+  const [isYearlyExpensesLoading, setIsYearlyExpensesLoading] = useState(false);
+  const [yearlyExpensesError, setYearlyExpensesError] = useState<string | null>(null);
   const [selectedExpenseMonth, setSelectedExpenseMonth] = useState(currentMonth);
   const [selectedExpenseCategory, setSelectedExpenseCategory] = useState<string | null>(
     null,
@@ -198,6 +222,68 @@ function App() {
   useEffect(() => {
     let isMounted = true;
 
+    async function loadYearlyExpenses() {
+      setIsYearlyExpensesLoading(true);
+      setYearlyExpensesError(null);
+
+      try {
+        const monthlyReports = await Promise.all(
+          monthKeys.map((month) => getExpensesReport(selectedYear, month)),
+        );
+        const categories = [
+          ...new Set(
+            monthlyReports.flatMap((report) =>
+              report.transactions.map((expense) => formatCategory(expense.category)),
+            ),
+          ),
+        ].sort((a, b) => a.localeCompare(b));
+        const filteredReports =
+          selectedYearlyExpenseCategory === null
+            ? monthlyReports
+            : await Promise.all(
+                monthKeys.map((month) =>
+                  getExpensesReport(selectedYear, month, selectedYearlyExpenseCategory),
+                ),
+              );
+
+        if (isMounted) {
+          setYearlyExpenseCategories(categories);
+          setYearlyExpenseSummaries(
+            filteredReports.map((report, index) => ({
+              month: monthKeys[index],
+              total: report.summary.selectedTotal ?? 0,
+              count: report.transactions.length,
+              transactions: report.transactions,
+            })),
+          );
+        }
+      } catch (caughtError) {
+        if (isMounted) {
+          setYearlyExpenseSummaries([]);
+          setYearlyExpenseCategories([]);
+          setYearlyExpensesError(
+            caughtError instanceof Error
+              ? caughtError.message
+              : 'Unable to load yearly expenses.',
+          );
+        }
+      } finally {
+        if (isMounted) {
+          setIsYearlyExpensesLoading(false);
+        }
+      }
+    }
+
+    loadYearlyExpenses();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedYear, selectedYearlyExpenseCategory]);
+
+  useEffect(() => {
+    let isMounted = true;
+
     async function loadExpenses() {
       setIsExpensesLoading(true);
       setExpensesError(null);
@@ -306,6 +392,11 @@ function App() {
     setExpensesReport(null);
     setExpensesError(null);
     setIsExpensesLoading(false);
+    setYearlyExpenseSummaries([]);
+    setYearlyExpenseCategories([]);
+    setSelectedYearlyExpenseCategory(null);
+    setYearlyExpensesError(null);
+    setIsYearlyExpensesLoading(false);
     setSelectedExpenseCategory(null);
     setCategoryExpensesReport(null);
     setCategoryExpensesError(null);
@@ -325,6 +416,13 @@ function App() {
     setCategoryExpensesReport(null);
     setCategoryExpensesError(null);
     setIsCategoryExpensesLoading(false);
+  }
+
+  function handleYearlyExpenseCategoryChange(category: string | null) {
+    setSelectedYearlyExpenseCategory(category);
+    setYearlyExpenseSummaries([]);
+    setYearlyExpensesError(null);
+    setIsYearlyExpensesLoading(false);
   }
 
   return (
@@ -373,13 +471,16 @@ function App() {
             </label>
           </div>
 
-          <MonthlyIncome
-            transactions={incomeTransactions}
-            isLoading={isIncomeLoading}
-            error={incomeError}
-            selectedMonth={selectedIncomeMonth}
+          <YearlyExpensesChart
+            summaries={yearlyExpenseSummaries}
+            isLoading={isYearlyExpensesLoading}
+            error={yearlyExpensesError}
+            selectedMonth={selectedExpenseMonth}
             selectedYear={selectedYear}
-            onMonthChange={setSelectedIncomeMonth}
+            categoryOptions={yearlyExpenseCategories}
+            selectedCategory={selectedYearlyExpenseCategory}
+            onMonthChange={handleExpenseMonthChange}
+            onCategoryChange={handleYearlyExpenseCategoryChange}
           />
 
           <MonthlyExpenses
@@ -394,6 +495,15 @@ function App() {
             isCategoryLoading={isCategoryExpensesLoading}
             categoryError={categoryExpensesError}
             onCategoryChange={handleExpenseCategoryChange}
+          />
+
+          <MonthlyIncome
+            transactions={incomeTransactions}
+            isLoading={isIncomeLoading}
+            error={incomeError}
+            selectedMonth={selectedIncomeMonth}
+            selectedYear={selectedYear}
+            onMonthChange={setSelectedIncomeMonth}
           />
 
           <section className="content-section" aria-labelledby="combined-statements-heading">

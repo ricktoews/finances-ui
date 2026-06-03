@@ -67,7 +67,8 @@
 }
 
 .year-select select,
-.month-select select {
+.month-select select,
+.category-select select {
   min-width: 112px;
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -84,7 +85,14 @@
   gap: 10px;
 }
 
-.month-select span {
+.category-select {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.month-select span,
+.category-select span {
   color: var(--muted);
   font-size: 0.78rem;
   font-weight: 750;
@@ -253,12 +261,14 @@ tbody tr:last-child td {
 }
 
 .income-heading,
-.expenses-heading {
+.expenses-heading,
+.yearly-expenses-heading {
   align-items: start;
 }
 
 .income-body,
-.expenses-body {
+.expenses-body,
+.yearly-expenses-body {
   display: grid;
   gap: 24px;
   padding: 22px;
@@ -360,6 +370,125 @@ tbody tr:last-child td {
   gap: 6px;
 }
 
+.yearly-chart-controls {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.yearly-expenses-chart {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 10px;
+  min-height: 260px;
+  align-items: end;
+}
+
+.yearly-expense-bar {
+  display: grid;
+  grid-template-rows: auto minmax(150px, 1fr) auto auto;
+  gap: 8px;
+  min-width: 0;
+  height: 100%;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  padding: 10px 8px;
+  cursor: pointer;
+  transition:
+    background-color 160ms ease,
+    border-color 160ms ease,
+    transform 160ms ease;
+}
+
+.yearly-expense-bar:hover {
+  background: var(--row-hover);
+}
+
+.yearly-expense-bar:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.yearly-expense-bar.selected-expense-month {
+  border-color: var(--accent);
+  background: var(--selected-row);
+}
+
+.yearly-expense-bar span,
+.yearly-expense-bar small {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 750;
+  line-height: 1.2;
+  text-align: center;
+}
+
+.yearly-expense-bar strong {
+  color: var(--text-h);
+  font-size: 0.82rem;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+  text-align: center;
+}
+
+.yearly-expense-bar-column {
+  display: flex;
+  align-items: end;
+  justify-content: center;
+  min-height: 150px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--income-track);
+}
+
+.yearly-expense-bar-fill {
+  width: 100%;
+  border-radius: 8px 8px 0 0;
+  background: linear-gradient(180deg, #dc2626 0%, var(--negative) 100%);
+}
+
+.yearly-expenses-transactions {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface-raised);
+}
+
+.yearly-transactions-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.yearly-transactions-heading h3 {
+  color: var(--text-h);
+  font-size: 1.05rem;
+  line-height: 1.2;
+  margin: 0;
+}
+
+.yearly-transactions-heading p,
+.yearly-transactions-heading span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.yearly-transactions-heading p {
+  margin-top: 4px;
+}
+
+.yearly-transactions-table {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
 .category-group {
   display: grid;
   gap: 10px;
@@ -414,20 +543,23 @@ tbody tr:last-child td {
 
 .income-transactions,
 .expenses-transactions,
-.category-expenses-transactions {
+.category-expenses-transactions,
+.yearly-transactions-table {
   border: 1px solid var(--border);
   border-radius: 8px;
 }
 
 .income-transactions tbody tr,
 .expenses-transactions tbody tr,
-.category-expenses-transactions tbody tr {
+.category-expenses-transactions tbody tr,
+.yearly-transactions-table tbody tr {
   cursor: default;
 }
 
 .income-transactions tbody tr:hover,
 .expenses-transactions tbody tr:hover,
-.category-expenses-transactions tbody tr:hover {
+.category-expenses-transactions tbody tr:hover,
+.yearly-transactions-table tbody tr:hover {
   background: transparent;
 }
 
@@ -494,7 +626,8 @@ tbody tr:last-child td {
   }
 
   .income-heading,
-  .expenses-heading {
+  .expenses-heading,
+  .yearly-expenses-heading {
     align-items: stretch;
     flex-direction: column;
   }
@@ -502,6 +635,16 @@ tbody tr:last-child td {
   .month-select {
     align-items: stretch;
     justify-content: space-between;
+  }
+
+  .category-select {
+    align-items: stretch;
+    justify-content: space-between;
+  }
+
+  .yearly-chart-controls {
+    align-items: stretch;
+    flex-direction: column;
   }
 
   .income-metrics {
@@ -515,6 +658,28 @@ tbody tr:last-child td {
 
   .income-bar-row strong {
     text-align: left;
+  }
+
+  .yearly-expenses-chart {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
+  }
+
+  .yearly-transactions-heading {
+    display: grid;
+  }
+}
+
+@media (max-width: 520px) {
+  .yearly-expenses-chart {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .yearly-expense-bar {
+    grid-template-rows: auto minmax(120px, 1fr) auto auto;
+  }
+
+  .yearly-expense-bar-column {
+    min-height: 120px;
   }
 }
 
