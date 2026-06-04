@@ -5,30 +5,11 @@
 }
 
 .dashboard-header {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 32px;
   margin-bottom: 34px;
-}
-
-.eyebrow {
-  margin: 0 0 8px;
-  color: var(--accent);
-  font-size: 0.78rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .dashboard-header h1 {
   margin: 0;
-}
-
-.header-copy {
-  max-width: 420px;
-  color: var(--muted);
-  text-align: right;
 }
 
 .dashboard-toolbar {
@@ -604,16 +585,6 @@ tbody tr:last-child td {
   .app-shell {
     width: min(100% - 28px, 720px);
     padding: 36px 0;
-  }
-
-  .dashboard-header {
-    display: block;
-  }
-
-  .header-copy {
-    max-width: 100%;
-    margin-top: 12px;
-    text-align: left;
   }
 
   .dashboard-toolbar {

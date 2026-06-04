@@ -428,13 +428,7 @@ function App() {
   return (
     <main className="app-shell">
       <header className="dashboard-header">
-        <div>
-          <p className="eyebrow">Personal finance</p>
-          <h1>Finance Dashboard</h1>
-        </div>
-        <p className="header-copy">
-          A read-only view of imported statements, ordered by the latest period first.
-        </p>
+        <h1>Finance Dashboard</h1>
       </header>
 
       {isLoading && <p className="status-message">Loading statements...</p>}
