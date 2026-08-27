@@ -32,6 +32,14 @@ function getStatementYear(statement: Statement): string {
   return (statement.periodEnd || statement.periodStart).slice(0, 4);
 }
 
+function getStatementMonth(statement: Statement): string {
+  return (statement.periodEnd || statement.periodStart).slice(5, 7);
+}
+
+function getRoute(): '/' | '/statements' {
+  return window.location.pathname === '/statements' ? '/statements' : '/';
+}
+
 function getStatementYears(statements: Statement[]): string[] {
   const years = new Set(
     statements
@@ -43,10 +51,12 @@ function getStatementYears(statements: Statement[]): string[] {
 }
 
 function App() {
+  const [route, setRoute] = useState(getRoute);
   const [statements, setStatements] = useState<Statement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedYear, setSelectedYear] = useState(currentYear);
+  const [selectedStatementMonth, setSelectedStatementMonth] = useState('all');
   const [selectedStatement, setSelectedStatement] = useState<Statement | null>(null);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isTransactionsLoading, setIsTransactionsLoading] = useState(false);
@@ -78,8 +88,13 @@ function App() {
   const statementYears = useMemo(() => getStatementYears(statements), [statements]);
   const displayedStatements = useMemo(
     () =>
-      statements.filter((statement) => getStatementYear(statement) === selectedYear),
-    [selectedYear, statements],
+      statements.filter(
+        (statement) =>
+          getStatementYear(statement) === selectedYear &&
+          (selectedStatementMonth === 'all' ||
+            getStatementMonth(statement) === selectedStatementMonth),
+      ),
+    [selectedStatementMonth, selectedYear, statements],
   );
   const combinedStatements = useMemo(
     () =>
@@ -96,6 +111,22 @@ function App() {
     [displayedStatements],
   );
   const yearOptions = statementYears.length > 0 ? statementYears : [selectedYear];
+
+  useEffect(() => {
+    function handlePopState() {
+      setRoute(getRoute());
+    }
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  function navigate(nextRoute: '/' | '/statements') {
+    if (window.location.pathname !== nextRoute) {
+      window.history.pushState({}, '', nextRoute);
+    }
+    setRoute(nextRoute);
+  }
 
   useEffect(() => {
     let isMounted = true;
@@ -381,6 +412,7 @@ function App() {
 
   function handleYearChange(nextYear: string) {
     setSelectedYear(nextYear);
+    setSelectedStatementMonth('all');
     setSelectedStatement(null);
     setTransactions([]);
     setTransactionsError(null);
@@ -428,7 +460,34 @@ function App() {
   return (
     <main className="app-shell">
       <header className="dashboard-header">
-        <h1>Finance Dashboard</h1>
+        <a className="site-title" href="/" onClick={(event) => {
+          event.preventDefault();
+          navigate('/');
+        }}>
+          Finance Dashboard
+        </a>
+        <nav aria-label="Primary navigation">
+          <a
+            href="/"
+            aria-current={route === '/' ? 'page' : undefined}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate('/');
+            }}
+          >
+            Overview
+          </a>
+          <a
+            href="/statements"
+            aria-current={route === '/statements' ? 'page' : undefined}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate('/statements');
+            }}
+          >
+            Statements
+          </a>
+        </nav>
       </header>
 
       {isLoading && <p className="status-message">Loading statements...</p>}
@@ -439,7 +498,7 @@ function App() {
         </div>
       )}
 
-      {!isLoading && !error && (
+      {!isLoading && !error && route === '/' && (
         <>
           <div className="dashboard-toolbar" aria-label="Dashboard filters">
             <div className="toolbar-metric">
@@ -499,6 +558,48 @@ function App() {
             selectedYear={selectedYear}
             onMonthChange={setSelectedIncomeMonth}
           />
+        </>
+      )}
+
+      {!isLoading && !error && route === '/statements' && (
+        <>
+          <div className="page-heading">
+            <h1>Statements</h1>
+            <p>Browse imported bank and credit card statements by period.</p>
+          </div>
+
+          <div className="dashboard-toolbar statement-filters" aria-label="Statement filters">
+            <div className="toolbar-metric">
+              <span className="toolbar-label">Matching statements</span>
+              <strong>{displayedStatements.length}</strong>
+            </div>
+            <label className="year-select">
+              <span>Year</span>
+              <select value={selectedYear} onChange={(event) => handleYearChange(event.target.value)}>
+                {yearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+              </select>
+            </label>
+            <label className="month-select">
+              <span>Month</span>
+              <select
+                value={selectedStatementMonth}
+                onChange={(event) => {
+                  setSelectedStatementMonth(event.target.value);
+                  setSelectedStatement(null);
+                  setTransactions([]);
+                }}
+              >
+                <option value="all">All months</option>
+                {monthKeys.map((month) => (
+                  <option key={month} value={month}>
+                    {new Intl.DateTimeFormat('en-US', { month: 'long' }).format(
+                      new Date(`${selectedYear}-${month}-01T00:00:00`),
+                    )}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
 
           <section className="content-section" aria-labelledby="combined-statements-heading">
             <div className="section-heading">

@@ -11,6 +11,10 @@ import type {
 
 const API_BASE_URL = 'https://finances.toews-api.com';
 
+export function getStatementPdfUrl(statementId: string): string {
+  return `${API_BASE_URL}/statements/${encodeURIComponent(statementId)}/pdf`;
+}
+
 function toNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;

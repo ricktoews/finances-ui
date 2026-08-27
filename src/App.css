@@ -5,11 +5,50 @@
 }
 
 .dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
   margin-bottom: 34px;
 }
 
-.dashboard-header h1 {
-  margin: 0;
+.site-title {
+  color: var(--text-h);
+  font-size: 1.35rem;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.dashboard-header nav {
+  display: flex;
+  gap: 8px;
+}
+
+.dashboard-header nav a {
+  border-radius: 8px;
+  color: var(--muted);
+  font-weight: 650;
+  padding: 8px 12px;
+  text-decoration: none;
+}
+
+.dashboard-header nav a:hover,
+.dashboard-header nav a[aria-current='page'] {
+  color: var(--text-h);
+  background: var(--selected-row);
+}
+
+.page-heading {
+  margin-bottom: 28px;
+}
+
+.page-heading p {
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+.statement-filters {
+  grid-template-columns: minmax(0, 1fr) auto auto;
 }
 
 .dashboard-toolbar {
@@ -224,6 +263,52 @@ tbody tr:last-child td {
 .transactions-heading {
   align-items: start;
   padding: 18px 22px;
+}
+
+.transactions-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.copy-json-button,
+.statement-pdf-button {
+  display: inline-grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-h);
+  background: var(--surface);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.copy-json-button:hover:not(:disabled),
+.statement-pdf-button:hover {
+  background: var(--row-hover);
+}
+
+.copy-json-button:focus-visible,
+.statement-pdf-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.copy-json-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.transactions-heading-actions .copy-status {
+  color: var(--positive);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.transactions-heading-actions .copy-error {
+  color: var(--danger);
 }
 
 .source-meta {
@@ -464,6 +549,38 @@ tbody tr:last-child td {
   margin-top: 4px;
 }
 
+.yearly-transactions-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.yearly-transactions-actions button {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-h);
+  background: var(--surface);
+  font: inherit;
+  font-weight: 650;
+  padding: 8px 12px;
+  cursor: pointer;
+}
+
+.yearly-transactions-actions button:hover:not(:disabled) {
+  background: var(--row-hover);
+}
+
+.yearly-transactions-actions button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.yearly-transactions-actions button:disabled {
+  color: var(--muted);
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
 .yearly-transactions-table {
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -591,6 +708,11 @@ tbody tr:last-child td {
     grid-template-columns: 1fr;
   }
 
+  .dashboard-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .year-select {
     align-items: stretch;
     justify-content: space-between;
@@ -637,6 +759,11 @@ tbody tr:last-child td {
 
   .yearly-transactions-heading {
     display: grid;
+  }
+
+  .yearly-transactions-actions {
+    align-items: stretch;
+    flex-direction: column;
   }
 }
 
@@ -741,5 +868,75 @@ tbody tr:last-child td {
 
   .source-file {
     max-width: none;
+  }
+
+  .expanded-row .transactions-panel .table-shell {
+    overflow-x: hidden;
+  }
+
+  .expanded-row .transactions-panel table {
+    display: table;
+    width: 100%;
+    min-width: 0;
+    table-layout: fixed;
+  }
+
+  .expanded-row .transactions-panel thead {
+    display: table-header-group;
+    position: static;
+    width: auto;
+    height: auto;
+    overflow: visible;
+    clip: auto;
+  }
+
+  .expanded-row .transactions-panel tbody {
+    display: table-row-group;
+  }
+
+  .expanded-row .transactions-panel tr {
+    display: table-row;
+    padding: 0;
+  }
+
+  .expanded-row .transactions-panel th,
+  .expanded-row .transactions-panel td {
+    display: table-cell;
+    padding: 10px 6px;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.78rem;
+    line-height: 1.35;
+  }
+
+  .expanded-row .transactions-panel th {
+    font-size: 0.65rem;
+  }
+
+  .expanded-row .transactions-panel th:first-child,
+  .expanded-row .transactions-panel td:first-child {
+    width: 78px;
+    padding-left: 10px;
+    white-space: nowrap;
+  }
+
+  .expanded-row .transactions-panel th:last-child,
+  .expanded-row .transactions-panel td:last-child {
+    width: 72px;
+    padding-right: 10px;
+    white-space: nowrap;
+  }
+
+  .expanded-row .transactions-panel th:nth-child(2),
+  .expanded-row .transactions-panel td:nth-child(2) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .expanded-row .transactions-panel td::before {
+    content: none;
+  }
+
+  .expanded-row .transactions-panel .numeric {
+    text-align: right;
   }
 }

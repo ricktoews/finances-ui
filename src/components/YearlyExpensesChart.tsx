@@ -81,6 +81,23 @@ function getExpenseAmount(expense: Expense): number {
   return Math.abs(expense.amount ?? 0);
 }
 
+function getDownloadFileName(
+  year: string,
+  month: string,
+  category: string | null,
+): string {
+  const categorySlug =
+    category === null
+      ? 'all-categories'
+      : category
+          .trim()
+          .toLowerCase()
+          .replace(/[^a-z0-9]+/g, '-')
+          .replace(/^-|-$/g, '') || 'uncategorized';
+
+  return `${year}-${month}-expenses-${categorySlug}.json`;
+}
+
 export function YearlyExpensesChart({
   summaries,
   isLoading,
@@ -115,6 +132,32 @@ export function YearlyExpensesChart({
   const selectedSummary =
     completeSummaries.find((summary) => summary.month === selectedMonth) ??
     completeSummaries[0];
+
+  function handleDownloadSelectedMonth() {
+    const exportData = {
+      year: selectedYear,
+      month: selectedSummary.month,
+      monthLabel: selectedSummary.label,
+      category: selectedCategory,
+      total: selectedSummary.total,
+      count: selectedSummary.count,
+      transactions: selectedSummary.transactions,
+    };
+    const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+      type: 'application/json',
+    });
+    const downloadUrl = URL.createObjectURL(blob);
+    const downloadLink = document.createElement('a');
+
+    downloadLink.href = downloadUrl;
+    downloadLink.download = getDownloadFileName(
+      selectedYear,
+      selectedSummary.month,
+      selectedCategory,
+    );
+    downloadLink.click();
+    URL.revokeObjectURL(downloadUrl);
+  }
 
   return (
     <section
@@ -234,7 +277,16 @@ export function YearlyExpensesChart({
                   · {formatCurrency(selectedSummary.total)}
                 </p>
               </div>
-              <span>{selectedSummary.count} entries</span>
+              <div className="yearly-transactions-actions">
+                <span>{selectedSummary.count} entries</span>
+                <button
+                  type="button"
+                  onClick={handleDownloadSelectedMonth}
+                  disabled={selectedSummary.transactions.length === 0}
+                >
+                  Download JSON
+                </button>
+              </div>
             </div>
 
             {selectedSummary.transactions.length === 0 && (
