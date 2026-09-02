@@ -7,6 +7,7 @@ import {
 import './App.css';
 import { MonthlyExpenses } from './components/MonthlyExpenses';
 import { MonthlyIncome } from './components/MonthlyIncome';
+import { JsonStatements } from './components/JsonStatements';
 import { StatementsTable } from './components/StatementsTable';
 import { YearlyExpensesChart } from './components/YearlyExpensesChart';
 import type { Expense, ExpensesReport, Statement, Transaction } from './types/finance';
@@ -36,8 +37,12 @@ function getStatementMonth(statement: Statement): string {
   return (statement.periodEnd || statement.periodStart).slice(5, 7);
 }
 
-function getRoute(): '/' | '/statements' {
-  return window.location.pathname === '/statements' ? '/statements' : '/';
+type Route = '/' | '/statements' | '/json-statements';
+
+function getRoute(): Route {
+  if (window.location.pathname === '/statements') return '/statements';
+  if (window.location.pathname === '/json-statements') return '/json-statements';
+  return '/';
 }
 
 function getStatementYears(statements: Statement[]): string[] {
@@ -121,7 +126,7 @@ function App() {
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
 
-  function navigate(nextRoute: '/' | '/statements') {
+  function navigate(nextRoute: Route) {
     if (window.location.pathname !== nextRoute) {
       window.history.pushState({}, '', nextRoute);
     }
@@ -487,12 +492,24 @@ function App() {
           >
             Statements
           </a>
+          <a
+            href="/json-statements"
+            aria-current={route === '/json-statements' ? 'page' : undefined}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate('/json-statements');
+            }}
+          >
+            JSON Statements
+          </a>
         </nav>
       </header>
 
-      {isLoading && <p className="status-message">Loading statements...</p>}
+      {route !== '/json-statements' && isLoading && (
+        <p className="status-message">Loading statements...</p>
+      )}
 
-      {error && !isLoading && (
+      {route !== '/json-statements' && error && !isLoading && (
         <div className="status-message error-message" role="alert">
           {error}
         </div>
@@ -640,6 +657,8 @@ function App() {
           </section>
         </>
       )}
+
+      {route === '/json-statements' && <JsonStatements />}
     </main>
   );
 }

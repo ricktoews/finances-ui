@@ -87,6 +87,7 @@
 }
 
 .year-select select,
+.year-select input,
 .month-select select,
 .category-select select {
   min-width: 112px;
@@ -97,6 +98,66 @@
   font: inherit;
   font-weight: 650;
   padding: 8px 34px 8px 12px;
+}
+
+.year-select input {
+  width: 92px;
+}
+
+.json-statement-filters {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.json-statements-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.8fr) minmax(0, 1.5fr);
+  gap: 28px;
+  align-items: start;
+}
+
+.verified-file-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.verified-file-list li:not(:last-child) {
+  border-bottom: 1px solid var(--border);
+}
+
+.verified-file-list a {
+  display: grid;
+  gap: 5px;
+  padding: 16px 20px;
+  color: var(--text-h);
+  text-decoration: none;
+  overflow-wrap: anywhere;
+}
+
+.verified-file-list a:hover,
+.verified-file-list a.selected-file {
+  background: var(--selected-row);
+}
+
+.verified-file-list a.selected-file {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.verified-file-list span {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
+.statement-json {
+  max-height: 70vh;
+  margin: 0;
+  padding: 20px;
+  overflow: auto;
+  color: var(--text-h);
+  background: var(--surface-raised);
+  font-size: 0.84rem;
+  line-height: 1.55;
+  tab-size: 2;
 }
 
 .month-select {
@@ -309,6 +370,12 @@ tbody tr:last-child td {
 
 .transactions-heading-actions .copy-error {
   color: var(--danger);
+}
+
+.transaction-number {
+  width: 52px;
+  color: var(--muted);
+  text-align: right;
 }
 
 .source-meta {
@@ -713,6 +780,14 @@ tbody tr:last-child td {
     flex-direction: column;
   }
 
+  .dashboard-header nav {
+    flex-wrap: wrap;
+  }
+
+  .json-statements-layout {
+    grid-template-columns: 1fr;
+  }
+
   .year-select {
     align-items: stretch;
     justify-content: space-between;
@@ -914,8 +989,16 @@ tbody tr:last-child td {
 
   .expanded-row .transactions-panel th:first-child,
   .expanded-row .transactions-panel td:first-child {
-    width: 78px;
+    width: 34px;
     padding-left: 10px;
+    padding-right: 4px;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .expanded-row .transactions-panel th:nth-child(2),
+  .expanded-row .transactions-panel td:nth-child(2) {
+    width: 78px;
     white-space: nowrap;
   }
 
@@ -926,8 +1009,8 @@ tbody tr:last-child td {
     white-space: nowrap;
   }
 
-  .expanded-row .transactions-panel th:nth-child(2),
-  .expanded-row .transactions-panel td:nth-child(2) {
+  .expanded-row .transactions-panel th:nth-child(3),
+  .expanded-row .transactions-panel td:nth-child(3) {
     overflow-wrap: anywhere;
     word-break: break-word;
   }

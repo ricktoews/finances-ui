@@ -162,6 +162,7 @@ export function TransactionsPanel({
           <table>
             <thead>
               <tr>
+                <th scope="col" className="transaction-number">#</th>
                 <th scope="col">Date</th>
                 <th scope="col">Description</th>
                 <th scope="col" className="numeric">
@@ -170,8 +171,11 @@ export function TransactionsPanel({
               </tr>
             </thead>
             <tbody>
-              {transactions.map((transaction) => (
+              {transactions.map((transaction, index) => (
                 <tr key={transaction.id}>
+                  <td data-label="Transaction" className="transaction-number">
+                    {index + 1}
+                  </td>
                   <td data-label="Date">{formatDate(transaction.transactionDate)}</td>
                   <td data-label="Description">{formatText(transaction.description)}</td>
                   <td

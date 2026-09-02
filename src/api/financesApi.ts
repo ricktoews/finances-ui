@@ -7,6 +7,7 @@ import type {
   RawTransaction,
   Statement,
   Transaction,
+  VerifiedStatementFile,
 } from '../types/finance';
 
 const API_BASE_URL = 'https://finances.toews-api.com';
@@ -148,6 +149,70 @@ export async function getStatements(): Promise<Statement[]> {
   return rawStatements
     .map((statement, index) => normalizeStatement(statement as RawStatement, index))
     .sort((a, b) => b.periodEnd.localeCompare(a.periodEnd));
+}
+
+export async function getVerifiedStatementFiles(
+  year: string,
+): Promise<VerifiedStatementFile[]> {
+  const response = await fetch(
+    `${API_BASE_URL}/verified-statements/${encodeURIComponent(year)}/files`,
+  );
+
+  if (response.status === 404) {
+    return [];
+  }
+
+  if (!response.ok) {
+    throw new Error(`Unable to load verified statement files (${response.status})`);
+  }
+
+  const data: unknown = await response.json();
+  const files = Array.isArray(data)
+    ? data
+    : Array.isArray((data as { files?: unknown }).files)
+      ? (data as { files: unknown[] }).files
+      : [];
+
+  return files.flatMap((file) => {
+    if (typeof file === 'string') {
+      return [{ fileName: file, statementDate: '', statementType: '' }];
+    }
+
+    if (typeof file !== 'object' || file === null) {
+      return [];
+    }
+
+    const item = file as Record<string, unknown>;
+    const fileName = item.file_name ?? item.fileName ?? item.filename ?? item.name;
+
+    if (typeof fileName !== 'string') {
+      return [];
+    }
+
+    const statementDate = item.statement_date ?? item.statementDate ?? item.date;
+    const statementType = item.statement_type ?? item.statementType ?? item.type;
+
+    return [{
+      fileName,
+      statementDate: typeof statementDate === 'string' ? statementDate : '',
+      statementType: typeof statementType === 'string' ? statementType : '',
+    }];
+  });
+}
+
+export async function getVerifiedStatementData(
+  year: string,
+  fileName: string,
+): Promise<unknown> {
+  const response = await fetch(
+    `${API_BASE_URL}/verified-statements/${encodeURIComponent(year)}/files/${encodeURIComponent(fileName)}`,
+  );
+
+  if (!response.ok) {
+    throw new Error(`Unable to load verified statement data (${response.status})`);
+  }
+
+  return response.json();
 }
 
 export async function getStatementTransactions(statementId: string): Promise<Transaction[]> {

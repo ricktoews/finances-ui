@@ -33,6 +33,12 @@ export type Statement = {
   combinedEndingBalance: number | null;
 };
 
+export type VerifiedStatementFile = {
+  fileName: string;
+  statementDate: string;
+  statementType: string;
+};
+
 export type RawTransaction = {
   id?: string | number;
   transaction_date?: string;
