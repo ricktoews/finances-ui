@@ -16,6 +16,19 @@ export function getStatementPdfUrl(statementId: string): string {
   return `${API_BASE_URL}/statements/${encodeURIComponent(statementId)}/pdf`;
 }
 
+export async function getStatementPdf(
+  statementId: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(getStatementPdfUrl(statementId), { signal });
+
+  if (!response.ok) {
+    throw new Error(`Unable to load statement PDF (${response.status})`);
+  }
+
+  return response.blob();
+}
+
 function toNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -190,7 +203,11 @@ export async function getVerifiedStatementFiles(
     }
 
     const statementDate = item.statement_date ?? item.statementDate ?? item.date;
-    const statementType = item.statement_type ?? item.statementType ?? item.type;
+    const statementType =
+      item.statement_type ??
+      item.statementType ??
+      item.likely_statement_type ??
+      item.type;
 
     return [{
       fileName,
@@ -245,6 +262,7 @@ export async function getExpensesReport(
   year: string,
   month: string,
   category?: string,
+  signal?: AbortSignal,
 ): Promise<ExpensesReport> {
   const params = new URLSearchParams({
     year,
@@ -255,7 +273,7 @@ export async function getExpensesReport(
     params.set('category', category);
   }
 
-  const response = await fetch(`${API_BASE_URL}/reports/expenses?${params}`);
+  const response = await fetch(`${API_BASE_URL}/reports/expenses?${params}`, { signal });
 
   if (!response.ok) {
     throw new Error(`Unable to load expenses (${response.status})`);

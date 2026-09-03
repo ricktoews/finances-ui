@@ -463,7 +463,7 @@ function App() {
   }
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${route === '/json-statements' ? ' json-statements-shell' : ''}`}>
       <header className="dashboard-header">
         <a className="site-title" href="/" onClick={(event) => {
           event.preventDefault();
