@@ -346,6 +346,56 @@
   font-variant-numeric: tabular-nums;
 }
 
+.combined-account-summary {
+  margin-bottom: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.combined-account-summary h4 {
+  margin: 0;
+  padding: 14px 16px;
+  color: var(--text-h);
+  border-bottom: 1px solid var(--border);
+}
+
+.combined-account-summary table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.combined-account-summary th,
+.combined-account-summary td {
+  padding: 9px 16px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+
+.combined-account-summary thead th {
+  color: var(--muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.combined-account-summary th:last-child,
+.combined-account-summary td:last-child {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.combined-account-summary tbody tr:last-child th,
+.combined-account-summary tbody tr:last-child td {
+  border-bottom: 0;
+}
+
+.combined-account-total th,
+.combined-account-total td {
+  color: var(--text-h);
+  font-weight: 800;
+}
+
 .deposit-accounts {
   display: grid;
   gap: 20px;
@@ -377,6 +427,23 @@
   margin: 16px 0 20px;
 }
 
+.deposit-section-title {
+  margin: 24px 0 4px;
+  color: var(--danger);
+  font-size: 1rem;
+}
+
+.pdf-account-summary {
+  display: block;
+  margin-top: 0;
+}
+
+.pdf-account-summary .ending-balance-row dt,
+.pdf-account-summary .ending-balance-row dd {
+  color: var(--accent);
+  font-weight: 800;
+}
+
 .deposit-account-summary > div {
   display: flex;
   justify-content: space-between;
@@ -402,6 +469,10 @@
 
 .deposit-transactions-heading {
   margin-bottom: 10px;
+}
+
+.deposit-transaction-group + .deposit-transaction-group {
+  margin-top: 28px;
 }
 
 .deposit-transactions-table table {

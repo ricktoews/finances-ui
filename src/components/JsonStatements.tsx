@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   getStatementPdf,
+  getStatementPdfByFilename,
   getStatements,
   getVerifiedStatementData,
   getVerifiedStatementFiles,
@@ -26,7 +27,7 @@ function findStatement(
   const matchingStem = statements.find(
     (statement) => statement.sourceFile && fileStem(statement.sourceFile) === fileStem(file.fileName),
   );
-
+console.log(`====> findStatement`, file, statements)
   return matchingStem ?? statements.find(
     (statement) => statement.periodEnd === file.statementDate,
   );
@@ -74,6 +75,19 @@ function formatStatementDate(value: unknown): string {
   if (typeof value !== 'string' || !value) return 'Not extracted';
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
   return match ? `${match[2]}/${match[3]}/${match[1]}` : value;
+}
+
+function formatLongStatementDate(value: unknown): string {
+  if (typeof value !== 'string' || !value) return 'date not extracted';
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return value;
+
+  return new Intl.DateTimeFormat('en-US', {
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  }).format(new Date(Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3]))));
 }
 
 function formatTransactionDate(value: unknown): string {
@@ -221,7 +235,17 @@ function formatType(value: unknown): string {
     : '—';
 }
 
-function DepositAccount({ account, index }: { account: JsonRecord; index: number }) {
+function DepositAccount({
+  account,
+  index,
+  periodStart,
+  periodEnd,
+}: {
+  account: JsonRecord;
+  index: number;
+  periodStart: unknown;
+  periodEnd: unknown;
+}) {
   const summary = asRecord(getField(account, 'summary'));
   const transactions = Array.isArray(account.transactions)
     ? account.transactions.flatMap((transaction) => {
@@ -230,104 +254,113 @@ function DepositAccount({ account, index }: { account: JsonRecord; index: number
       })
     : [];
   const beginningBalanceCents = moneyInCents(
-    getField(account, 'beginning_balance', 'beginningBalance'),
+    getField(summary, 'beginning_balance', 'beginningBalance')
+      ?? getField(account, 'beginning_balance', 'beginningBalance'),
   );
   const endingBalanceCents = moneyInCents(
-    getField(account, 'ending_balance', 'endingBalance'),
+    getField(summary, 'ending_balance', 'endingBalance')
+      ?? getField(account, 'ending_balance', 'endingBalance'),
   );
-  const activityTotalCents = transactions.reduce<number | null>((total, transaction) => {
-    const amount = moneyInCents(getField(transaction, 'amount'));
-    return total === null || amount === null ? null : total + amount;
-  }, 0);
-  const calculatedEndingCents = beginningBalanceCents !== null && activityTotalCents !== null
-    ? beginningBalanceCents + activityTotalCents
-    : null;
-  const differenceCents = endingBalanceCents !== null && calculatedEndingCents !== null
-    ? calculatedEndingCents - endingBalanceCents
-    : null;
   const accountType = formatType(getField(account, 'account_type', 'accountType'));
-  const productName = String(getField(account, 'product_name', 'productName') ?? accountType);
+  const productName = String(
+    getField(account, 'account_name', 'accountName', 'product_name', 'productName') ?? accountType,
+  );
   const accountNumber = String(
-    getField(account, 'account_number_masked', 'accountNumberMasked') ?? 'Number unavailable',
+    getField(
+      account,
+      'account_number_masked',
+      'accountNumberMasked',
+      'account_number_last4',
+      'accountNumberLast4',
+    ) ?? 'Number unavailable',
   );
   const summaryRows = [
-    ['Beginning Balance', formatMoney(getField(account, 'beginning_balance', 'beginningBalance'))],
+    [`Beginning balance on ${formatLongStatementDate(periodStart)}`, formatMoney(
+      beginningBalanceCents === null ? undefined : beginningBalanceCents / 100,
+    )],
     ['Deposits and Other Additions', formatMoney(getField(summary, 'deposits_and_other_additions', 'depositsAndOtherAdditions'))],
     ['Withdrawals and Other Subtractions', formatMoney(getField(summary, 'withdrawals_and_other_subtractions', 'withdrawalsAndOtherSubtractions'))],
     ['Checks', formatMoney(getField(summary, 'checks'))],
     ['Service Fees', formatMoney(getField(summary, 'service_fees', 'serviceFees'))],
-    ['Annual Percentage Yield Earned', getField(summary, 'annual_percentage_yield_earned', 'annualPercentageYieldEarned') === undefined
-      ? 'Not extracted'
-      : `${String(getField(summary, 'annual_percentage_yield_earned', 'annualPercentageYieldEarned'))}%`],
-    ['Interest Paid Year to Date', formatMoney(getField(summary, 'interest_paid_year_to_date', 'interestPaidYearToDate'))],
-    ['Ending Balance', formatMoney(getField(account, 'ending_balance', 'endingBalance'))],
+    [`Ending balance on ${formatLongStatementDate(periodEnd)}`, formatMoney(
+      endingBalanceCents === null ? undefined : endingBalanceCents / 100,
+    )],
+  ];
+  const isServiceFee = (transaction: JsonRecord) => (
+    ['fee', 'service_fee'].includes(String(getField(transaction, 'type') ?? '').toLowerCase())
+  );
+  const transactionGroups = [
+    {
+      title: 'Deposits and other additions',
+      transactions: transactions.filter((transaction) => (
+        !isServiceFee(transaction)
+          && (moneyInCents(getField(transaction, 'amount')) ?? 0) >= 0
+      )),
+      total: getField(summary, 'deposits_and_other_additions', 'depositsAndOtherAdditions'),
+    },
+    {
+      title: 'Withdrawals and other subtractions',
+      transactions: transactions.filter((transaction) => (
+        !isServiceFee(transaction)
+          && (moneyInCents(getField(transaction, 'amount')) ?? 0) < 0
+      )),
+      total: getField(summary, 'withdrawals_and_other_subtractions', 'withdrawalsAndOtherSubtractions'),
+    },
+    {
+      title: 'Service fees',
+      transactions: transactions.filter(isServiceFee),
+      total: getField(summary, 'service_fees', 'serviceFees'),
+    },
   ];
 
   return (
     <section className="deposit-account" aria-labelledby={`deposit-account-${index}`}>
       <div className="deposit-account-heading">
         <div>
-          <h4 id={`deposit-account-${index}`}>{productName}</h4>
+          <h4 id={`deposit-account-${index}`}>Your {productName}</h4>
           <p>{accountType} · {accountNumber}</p>
         </div>
-        <strong>{formatMoney(getField(account, 'ending_balance', 'endingBalance'))}</strong>
       </div>
 
-      <dl className="deposit-account-summary">
+      <h5 className="deposit-section-title">Account summary</h5>
+      <dl className="deposit-account-summary pdf-account-summary">
         {summaryRows.map(([label, value]) => (
-          <div key={label}>
+          <div className={label.startsWith('Ending balance') ? 'ending-balance-row' : undefined} key={label}>
             <dt>{label}</dt>
             <dd>{value}</dd>
           </div>
         ))}
       </dl>
 
-      <div className="deposit-transactions-heading">
-        <h5>Transactions</h5>
-        <p>{transactions.length} entries in original JSON array order.</p>
-      </div>
-      <div className="extracted-transactions-table deposit-transactions-table">
-        <table>
-          <thead>
-            <tr>
-              <th scope="col">Transaction date</th>
-              <th scope="col">Description</th>
-              <th scope="col">Type</th>
-              <th scope="col">Amount</th>
-            </tr>
-          </thead>
-          <tbody>
-            {transactions.map((transaction, transactionIndex) => (
-              <tr key={`${String(getField(transaction, 'transaction_date', 'transactionDate') ?? '')}-${transactionIndex}`}>
-                <td>{formatTransactionDate(getField(transaction, 'transaction_date', 'transactionDate'))}</td>
-                <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}</td>
-                <td>{formatType(getField(transaction, 'type'))}</td>
-                <td className="transaction-amount">{formatMoney(getField(transaction, 'amount'))}</td>
-              </tr>
-            ))}
-            <tr className="transaction-total-row">
-              <th colSpan={3} scope="row">Calculated Net Transaction Activity</th>
-              <td className="transaction-amount">
-                {activityTotalCents === null ? 'Unable to calculate' : formatMoney(activityTotalCents / 100)}
-              </td>
-            </tr>
-            <tr className="transaction-total-row calculated-total-row">
-              <th colSpan={3} scope="row">Calculated Ending Balance</th>
-              <td className="transaction-amount">
-                {calculatedEndingCents === null ? 'Unable to calculate' : formatMoney(calculatedEndingCents / 100)}
-              </td>
-            </tr>
-            <tr className={`transaction-variance-row${differenceCents === null ? '' : differenceCents === 0 ? ' totals-match' : ' totals-mismatch'}`}>
-              <th colSpan={3} scope="row">
-                Ending Balance Variance {differenceCents === null ? '— Unavailable' : differenceCents === 0 ? '— Match' : '— Mismatch'}
-              </th>
-              <td className="transaction-amount">
-                {differenceCents === null ? 'Unavailable' : formatMoney(differenceCents / 100)}
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      {transactionGroups.map((group) => group.transactions.length > 0 && (
+        <div className="deposit-transaction-group" key={group.title}>
+          <h5 className="deposit-section-title">{group.title}</h5>
+          <div className="extracted-transactions-table deposit-transactions-table">
+            <table>
+              <thead>
+                <tr>
+                  <th scope="col">Date</th>
+                  <th scope="col">Description</th>
+                  <th scope="col">Amount</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.transactions.map((transaction, transactionIndex) => (
+                  <tr key={`${String(getField(transaction, 'transaction_date', 'transactionDate', 'date') ?? '')}-${transactionIndex}`}>
+                    <td>{formatTransactionDate(getField(transaction, 'transaction_date', 'transactionDate', 'date'))}</td>
+                    <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}</td>
+                    <td className="transaction-amount">{formatMoney(getField(transaction, 'amount'))}</td>
+                  </tr>
+                ))}
+                <tr className="transaction-total-row">
+                  <th colSpan={2} scope="row">Total {group.title.toLowerCase()}</th>
+                  <td className="transaction-amount">{formatMoney(group.total)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      ))}
     </section>
   );
 }
@@ -343,6 +376,25 @@ function ExtractedDepositStatement({ data }: { data: unknown }) {
 
   if (accounts.length === 0) return null;
 
+  const combinedEndingBalanceCents = accounts.reduce<number | null>((total, account) => {
+    const summary = asRecord(getField(account, 'summary'));
+    const endingBalance = moneyInCents(
+      getField(summary, 'ending_balance', 'endingBalance')
+        ?? getField(account, 'ending_balance', 'endingBalance'),
+    );
+    return total === null || endingBalance === null ? null : total + endingBalance;
+  }, 0);
+  const extractedCombinedEndingBalance = getField(
+    root,
+    'combined_ending_balance',
+    'combinedEndingBalance',
+  );
+  const combinedEndingBalance = moneyInCents(extractedCombinedEndingBalance) !== null
+    ? extractedCombinedEndingBalance
+    : combinedEndingBalanceCents === null
+      ? undefined
+      : combinedEndingBalanceCents / 100;
+
   return (
     <div className="extracted-deposit-statement">
       <div className="extracted-summary-heading deposit-statement-heading">
@@ -350,14 +402,63 @@ function ExtractedDepositStatement({ data }: { data: unknown }) {
           <h3>Extracted checking and savings accounts</h3>
           <p>{accounts.length} accounts · {formatStatementDate(getField(root, 'period_start', 'periodStart'))}–{formatStatementDate(getField(root, 'period_end', 'periodEnd'))}</p>
         </div>
-        <div className="combined-balance">
-          <span>Combined ending balance</span>
-          <strong>{formatMoney(getField(root, 'combined_ending_balance', 'combinedEndingBalance'))}</strong>
-        </div>
       </div>
+      <section className="combined-account-summary" aria-labelledby="combined-account-summary-heading">
+        <h4 id="combined-account-summary-heading">Combined ending balances</h4>
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Deposit account</th>
+              <th scope="col">Account number</th>
+              <th scope="col">Ending balance</th>
+            </tr>
+          </thead>
+          <tbody>
+            {accounts.map((account, index) => {
+              const summary = asRecord(getField(account, 'summary'));
+              const accountName = getField(
+                account,
+                'account_name',
+                'accountName',
+                'product_name',
+                'productName',
+                'account_type',
+                'accountType',
+              );
+              const accountNumber = getField(
+                account,
+                'account_number_masked',
+                'accountNumberMasked',
+                'account_number_last4',
+                'accountNumberLast4',
+              );
+              const endingBalance = getField(summary, 'ending_balance', 'endingBalance')
+                ?? getField(account, 'ending_balance', 'endingBalance');
+
+              return (
+                <tr key={`${String(accountNumber ?? '')}-${index}`}>
+                  <td>{String(accountName ?? 'Account')}</td>
+                  <td>{String(accountNumber ?? 'Not extracted')}</td>
+                  <td>{formatMoney(endingBalance)}</td>
+                </tr>
+              );
+            })}
+            <tr className="combined-account-total">
+              <th colSpan={2} scope="row">Total balance</th>
+              <td>{formatMoney(combinedEndingBalance)}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
       <div className="deposit-accounts">
         {accounts.map((account, index) => (
-          <DepositAccount account={account} index={index} key={`${String(getField(account, 'account_number_masked', 'accountNumberMasked') ?? '')}-${index}`} />
+          <DepositAccount
+            account={account}
+            index={index}
+            key={`${String(getField(account, 'account_number_masked', 'accountNumberMasked', 'account_number_last4', 'accountNumberLast4') ?? '')}-${index}`}
+            periodEnd={getField(root, 'period_end', 'periodEnd')}
+            periodStart={getField(root, 'period_start', 'periodStart')}
+          />
         ))}
       </div>
     </div>
@@ -522,25 +623,21 @@ export function JsonStatements() {
         }
       });
 
-    let pdfRequest: Promise<void>;
-    if (!statement) {
-      setPdfError('No matching statement ID was found for this verified file.');
-      pdfRequest = Promise.resolve();
-    } else {
-      pdfRequest = getStatementPdf(statement.id, controller.signal)
-        .then((blob) => {
-          if (controller.signal.aborted) return;
-          const nextPdfUrl = URL.createObjectURL(blob);
-          pdfUrlRef.current = nextPdfUrl;
-          setPdfUrl(nextPdfUrl);
-        })
-        .catch((error: unknown) => {
-          if (!controller.signal.aborted) {
-            setPdfError(error instanceof Error ? error.message : 'Unable to load statement PDF.');
-          }
-        });
-
-    }
+    const pdfFileName = fileName.replace(/\.json$/i, '.pdf');
+    const pdfRequest = (statement
+      ? getStatementPdf(statement.id, controller.signal)
+      : getStatementPdfByFilename(pdfFileName, controller.signal))
+      .then((blob) => {
+        if (controller.signal.aborted) return;
+        const nextPdfUrl = URL.createObjectURL(blob);
+        pdfUrlRef.current = nextPdfUrl;
+        setPdfUrl(nextPdfUrl);
+      })
+      .catch((error: unknown) => {
+        if (!controller.signal.aborted) {
+          setPdfError(error instanceof Error ? error.message : 'Unable to load statement PDF.');
+        }
+      });
 
     try {
       await Promise.all([jsonRequest, pdfRequest]);

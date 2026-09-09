@@ -29,6 +29,22 @@ export async function getStatementPdf(
   return response.blob();
 }
 
+export async function getStatementPdfByFilename(
+  filename: string,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const response = await fetch(
+    `${API_BASE_URL}/statements/by-filename/${encodeURIComponent(filename)}/pdf`,
+    { signal },
+  );
+
+  if (!response.ok) {
+    throw new Error(`Unable to load statement PDF by filename (${response.status})`);
+  }
+
+  return response.blob();
+}
+
 function toNumber(value: unknown): number | null {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
