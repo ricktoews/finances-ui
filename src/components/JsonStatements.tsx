@@ -1,12 +1,14 @@
-import { Fragment, useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
   getStatementPdf,
+  getCategories,
   getStatementPdfByFilename,
   getStatements,
   getVerifiedStatementData,
   getVerifiedStatementFiles,
 } from '../api/financesApi';
-import type { Statement, VerifiedStatementFile } from '../types/finance';
+import type { Category, Statement, VerifiedStatementFile } from '../types/finance';
+import { TransactionCategorySelect } from './TransactionCategorySelect';
 
 const defaultYear = '2026';
 
@@ -112,7 +114,27 @@ function getTransactionSection(type: unknown): string {
   }
 }
 
-function ExtractedTransactions({ data }: { data: unknown }) {
+export function ExtractedTransactions({ data, onCategorySaved }: {
+  data: unknown;
+  onCategorySaved: (transactionId: string, category: Category) => void;
+}) {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const headingRef = useRef<HTMLDivElement>(null);
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesError, setCategoriesError] = useState<string | null>(null);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [categoryAttempt, setCategoryAttempt] = useState(0);
+  useEffect(() => {
+    const controller = new AbortController();
+    getCategories(controller.signal).then((result) => {
+      if (!controller.signal.aborted) setCategories(result);
+    }).catch((error: unknown) => {
+      if (!controller.signal.aborted) setCategoriesError(error instanceof Error ? error.message : 'Unable to load categories.');
+    }).finally(() => {
+      if (!controller.signal.aborted) setCategoriesLoading(false);
+    });
+    return () => controller.abort();
+  }, [categoryAttempt]);
   const root = asRecord(data);
   const summary = asRecord(getField(root, 'summary'));
   const transactions = Array.isArray(root?.transactions)
@@ -122,23 +144,44 @@ function ExtractedTransactions({ data }: { data: unknown }) {
       })
     : [];
 
+  useLayoutEffect(() => {
+    const section = sectionRef.current;
+    const heading = headingRef.current;
+    if (!section || !heading) return;
+    const updateOffset = () => section.style.setProperty(
+      '--transaction-heading-height', `${heading.getBoundingClientRect().height}px`,
+    );
+    updateOffset();
+    const observer = new ResizeObserver(updateOffset);
+    observer.observe(heading);
+    return () => observer.disconnect();
+  }, [transactions.length]);
+
   if (transactions.length === 0) return null;
 
   return (
-    <div className="extracted-transactions">
-      <div className="extracted-summary-heading">
+    <div className="extracted-transactions" ref={sectionRef}>
+      <div className="extracted-summary-heading" ref={headingRef}>
         <h3>Transactions</h3>
-        <p>{transactions.length} entries shown in their original JSON array order.</p>
+        {categoriesLoading && <p role="status">Loading categories…</p>}
+        {categoriesError && <div role="alert">
+          {categoriesError}{' '}
+          <button type="button" onClick={() => {
+            setCategoriesError(null);
+            setCategoriesLoading(true);
+            setCategoryAttempt((attempt) => attempt + 1);
+          }}>Retry categories</button>
+        </div>}
+        {!categoriesLoading && !categoriesError && categories.length === 0 && <p>No categories available.</p>}
       </div>
       <div className="extracted-transactions-table">
         <table>
+          <colgroup><col style={{ width: '15%' }} /><col style={{ width: '15%' }} /><col /><col style={{ width: '24%' }} /></colgroup>
           <thead>
             <tr>
-              <th scope="col">Transaction date</th>
-              <th scope="col">Posting date</th>
+              <th scope="col">Transaction<br />Date</th>
+              <th scope="col">Posting<br />Date</th>
               <th scope="col">Description</th>
-              <th scope="col">Reference</th>
-              <th scope="col">Account</th>
               <th scope="col">Amount</th>
             </tr>
           </thead>
@@ -152,12 +195,15 @@ function ExtractedTransactions({ data }: { data: unknown }) {
                 ? getTransactionSection(getField(transactions[index + 1], 'type'))
                 : null;
               const reference = getField(transaction, 'reference_number', 'referenceNumber');
-              const account = getField(transaction, 'account_number_last4', 'accountNumberLast4');
+              const category = getField(transaction, 'category');
+              const transactionId = getField(transaction, 'transaction_id', 'transactionId');
               const sectionTotal = section === 'Payments and Other Credits'
                 ? getField(summary, 'payments_and_other_credits', 'paymentsAndOtherCredits')
                 : section === 'Purchases and Adjustments'
                   ? getField(summary, 'purchases_and_adjustments', 'purchasesAndAdjustments')
-                  : undefined;
+                  : section === 'Interest Charged'
+                    ? getField(summary, 'interest_charged', 'interestCharged')
+                    : undefined;
               const isFinalSectionOccurrence = !transactions
                 .slice(index + 1)
                 .some((nextTransaction) => (
@@ -182,25 +228,34 @@ function ExtractedTransactions({ data }: { data: unknown }) {
                 <Fragment key={`${String(reference ?? '')}-${index}`}>
                   {section !== previousSection && (
                     <tr className="transaction-section-row">
-                      <th colSpan={6} scope="rowgroup">{section}</th>
+                      <td colSpan={2} />
+                      <th colSpan={2} scope="rowgroup">{section}</th>
                     </tr>
                   )}
                   <tr>
                     <td>{formatTransactionDate(getField(transaction, 'transaction_date', 'transactionDate'))}</td>
                     <td>{formatTransactionDate(getField(transaction, 'posting_date', 'postingDate'))}</td>
-                    <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}</td>
-                    <td>{String(reference ?? '—')}</td>
-                    <td>{String(account ?? '—')}</td>
+                    <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}
+                      <TransactionCategorySelect
+                        key={String(transactionId ?? index)}
+                        transactionId={typeof transactionId === 'string' ? transactionId : ''}
+                        description={String(getField(transaction, 'description') ?? '')}
+                        categoryId={getField(transaction, 'category_id', 'categoryId')}
+                        categoryName={typeof category === 'string' ? category : ''}
+                        categories={categories}
+                        onSaved={onCategorySaved}
+                      />
+                    </td>
                     <td className="transaction-amount">{formatMoney(getField(transaction, 'amount'))}</td>
                   </tr>
                   {section !== nextSection && isFinalSectionOccurrence && sectionTotal !== undefined && (
                     <>
                       <tr className="transaction-total-row">
-                        <th colSpan={5} scope="row">Recorded {section} Total</th>
+                        <th colSpan={3} scope="row">{`TOTAL ${section.toUpperCase()} FOR THIS PERIOD`}</th>
                         <td className="transaction-amount">{formatMoney(sectionTotal)}</td>
                       </tr>
                       <tr className="transaction-total-row calculated-total-row">
-                        <th colSpan={5} scope="row">
+                        <th colSpan={3} scope="row">
                           Calculated from {sectionTransactions.length} Transaction Rows
                         </th>
                         <td className="transaction-amount">
@@ -210,7 +265,7 @@ function ExtractedTransactions({ data }: { data: unknown }) {
                         </td>
                       </tr>
                       <tr className={`transaction-variance-row${differenceCents === null ? '' : differenceCents === 0 ? ' totals-match' : ' totals-mismatch'}`}>
-                        <th colSpan={5} scope="row">
+                        <th colSpan={3} scope="row">
                           Variance {differenceCents === null ? '— Unavailable' : differenceCents === 0 ? '— Match' : '— Mismatch'}
                         </th>
                         <td className="transaction-amount">
@@ -236,11 +291,14 @@ function formatType(value: unknown): string {
 }
 
 function DepositAccount({
+  categories, onCategorySaved,
   account,
   index,
   periodStart,
   periodEnd,
 }: {
+  categories: Category[];
+  onCategorySaved?: (transactionId: string, category: Category) => void;
   account: JsonRecord;
   index: number;
   periodStart: unknown;
@@ -264,15 +322,6 @@ function DepositAccount({
   const accountType = formatType(getField(account, 'account_type', 'accountType'));
   const productName = String(
     getField(account, 'account_name', 'accountName', 'product_name', 'productName') ?? accountType,
-  );
-  const accountNumber = String(
-    getField(
-      account,
-      'account_number_masked',
-      'accountNumberMasked',
-      'account_number_last4',
-      'accountNumberLast4',
-    ) ?? 'Number unavailable',
   );
   const summaryRows = [
     [`Beginning balance on ${formatLongStatementDate(periodStart)}`, formatMoney(
@@ -318,7 +367,6 @@ function DepositAccount({
       <div className="deposit-account-heading">
         <div>
           <h4 id={`deposit-account-${index}`}>Your {productName}</h4>
-          <p>{accountType} · {accountNumber}</p>
         </div>
       </div>
 
@@ -337,6 +385,7 @@ function DepositAccount({
           <h5 className="deposit-section-title">{group.title}</h5>
           <div className="extracted-transactions-table deposit-transactions-table">
             <table>
+              <colgroup><col style={{ width: '15%' }} /><col /><col style={{ width: '24%' }} /></colgroup>
               <thead>
                 <tr>
                   <th scope="col">Date</th>
@@ -348,7 +397,14 @@ function DepositAccount({
                 {group.transactions.map((transaction, transactionIndex) => (
                   <tr key={`${String(getField(transaction, 'transaction_date', 'transactionDate', 'date') ?? '')}-${transactionIndex}`}>
                     <td>{formatTransactionDate(getField(transaction, 'transaction_date', 'transactionDate', 'date'))}</td>
-                    <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}</td>
+                    <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}
+                    {onCategorySaved && <TransactionCategorySelect
+                      transactionId={String(getField(transaction, 'transaction_id', 'transactionId') ?? '')}
+                      description={String(getField(transaction, 'description') ?? '')}
+                      categoryId={getField(transaction, 'category_id', 'categoryId')}
+                      categoryName={String(getField(transaction, 'category') ?? '')}
+                      categories={categories} onSaved={onCategorySaved}
+                    />}</td>
                     <td className="transaction-amount">{formatMoney(getField(transaction, 'amount'))}</td>
                   </tr>
                 ))}
@@ -365,7 +421,11 @@ function DepositAccount({
   );
 }
 
-function ExtractedDepositStatement({ data }: { data: unknown }) {
+export function ExtractedDepositStatement({ data, categories = [], onCategorySaved }: {
+  data: unknown;
+  categories?: Category[];
+  onCategorySaved?: (transactionId: string, category: Category) => void;
+}) {
   const root = asRecord(data);
   const accounts = Array.isArray(root?.accounts)
     ? root.accounts.flatMap((account) => {
@@ -397,19 +457,13 @@ function ExtractedDepositStatement({ data }: { data: unknown }) {
 
   return (
     <div className="extracted-deposit-statement">
-      <div className="extracted-summary-heading deposit-statement-heading">
-        <div>
-          <h3>Extracted checking and savings accounts</h3>
-          <p>{accounts.length} accounts · {formatStatementDate(getField(root, 'period_start', 'periodStart'))}–{formatStatementDate(getField(root, 'period_end', 'periodEnd'))}</p>
-        </div>
-      </div>
       <section className="combined-account-summary" aria-labelledby="combined-account-summary-heading">
-        <h4 id="combined-account-summary-heading">Combined ending balances</h4>
+        <h3 id="combined-account-summary-heading">Your combined statement</h3>
+        <p className="combined-statement-period">for {formatLongStatementDate(getField(root, 'period_start', 'periodStart'))} to {formatLongStatementDate(getField(root, 'period_end', 'periodEnd'))}</p>
         <table>
           <thead>
             <tr>
-              <th scope="col">Deposit account</th>
-              <th scope="col">Account number</th>
+              <th scope="col">Your deposit accounts</th>
               <th scope="col">Ending balance</th>
             </tr>
           </thead>
@@ -438,13 +492,12 @@ function ExtractedDepositStatement({ data }: { data: unknown }) {
               return (
                 <tr key={`${String(accountNumber ?? '')}-${index}`}>
                   <td>{String(accountName ?? 'Account')}</td>
-                  <td>{String(accountNumber ?? 'Not extracted')}</td>
                   <td>{formatMoney(endingBalance)}</td>
                 </tr>
               );
             })}
             <tr className="combined-account-total">
-              <th colSpan={2} scope="row">Total balance</th>
+              <th scope="row">Total balance</th>
               <td>{formatMoney(combinedEndingBalance)}</td>
             </tr>
           </tbody>
@@ -453,6 +506,8 @@ function ExtractedDepositStatement({ data }: { data: unknown }) {
       <div className="deposit-accounts">
         {accounts.map((account, index) => (
           <DepositAccount
+            categories={categories}
+            onCategorySaved={onCategorySaved}
             account={account}
             index={index}
             key={`${String(getField(account, 'account_number_masked', 'accountNumberMasked', 'account_number_last4', 'accountNumberLast4') ?? '')}-${index}`}
@@ -465,11 +520,57 @@ function ExtractedDepositStatement({ data }: { data: unknown }) {
   );
 }
 
-function ExtractedStatementSummary({ data }: { data: unknown }) {
+function AmexStatementSummary({ root, summary }: { root: JsonRecord; summary: JsonRecord }) {
+  const newBalance = formatMoney(getField(summary, 'new_balance_total', 'newBalanceTotal'));
+  const minimumPayment = formatMoney(getField(summary, 'total_minimum_payment_due', 'totalMinimumPaymentDue'));
+  const rows = [
+    ['Previous Balance', formatMoney(getField(summary, 'previous_balance', 'previousBalance'))],
+    ['Payments/Credits', formatMoney(getField(summary, 'payments_and_other_credits', 'paymentsAndOtherCredits'))],
+    ['New Charges', formatMoney(getField(summary, 'purchases_and_adjustments', 'purchasesAndAdjustments'))],
+    ['Fees', formatMoney(getField(summary, 'fees_charged', 'feesCharged'))],
+    ['Interest Charged', formatMoney(getField(summary, 'interest_charged', 'interestCharged'))],
+  ];
+  const creditRows = [
+    ['Credit Limit', getField(summary, 'total_credit_line', 'totalCreditLine')],
+    ['Available Credit', getField(summary, 'total_credit_available', 'totalCreditAvailable')],
+    ['Cash Advance Limit', getField(summary, 'cash_advance_limit', 'cashAdvanceLimit', 'cash_credit_line')],
+    ['Available Cash', getField(summary, 'available_cash', 'availableCash', 'cash_credit_available')],
+  ].filter(([, value]) => value !== undefined);
+
+  return <div className="extracted-statement-summary amex-statement-summary">
+    <div className="amex-summary-grid">
+      <section className="amex-balance-block" aria-label="New balance and payment due">
+        <dl>
+          <div><dt>New Balance</dt><dd>{newBalance}</dd></div>
+          <div><dt>Minimum Payment Due</dt><dd>{minimumPayment}</dd></div>
+          <div className="amex-payment-date"><dt>Payment Due Date</dt><dd>{formatStatementDate(getField(root, 'payment_due_date', 'paymentDueDate'))}</dd></div>
+        </dl>
+      </section>
+      <section className="amex-account-block" aria-labelledby="amex-account-summary-heading">
+        <h4 id="amex-account-summary-heading">Account Summary</h4>
+        <div className="amex-account-box">
+          <dl>{rows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+          <dl className="amex-summary-totals">
+            <div><dt>New Balance</dt><dd>{newBalance}</dd></div>
+            <div><dt>Minimum Payment Due</dt><dd>{minimumPayment}</dd></div>
+          </dl>
+        </div>
+        {creditRows.length > 0 && <dl className="amex-credit-details">{creditRows.map(([label, value]) => <div key={String(label)}><dt>{String(label)}</dt><dd>{formatMoney(value)}</dd></div>)}</dl>}
+      </section>
+    </div>
+  </div>;
+}
+
+export function ExtractedStatementSummary({ data }: { data: unknown }) {
   const root = asRecord(data);
   const summary = asRecord(getField(root, 'summary'));
 
   if (!root || !summary) return null;
+
+  const institution = String(getField(root, 'financial_institution', 'financialInstitution') ?? '');
+  if (/american\s+express|\bamex\b/i.test(institution)) {
+    return <AmexStatementSummary root={root} summary={summary} />;
+  }
 
   const accountSummary = [
     ['Previous Balance', formatMoney(getField(summary, 'previous_balance', 'previousBalance'))],
@@ -481,35 +582,33 @@ function ExtractedStatementSummary({ data }: { data: unknown }) {
     ['Statement Closing Date', formatStatementDate(getField(root, 'statement_closing_date', 'statementClosingDate', 'period_end', 'periodEnd'))],
     ['Days in Billing Cycle', String(getField(root, 'days_in_billing_cycle', 'daysInBillingCycle') ?? 'Not extracted')],
   ];
+  const currentPaymentDue = getField(summary, 'current_payment_due', 'currentPaymentDue')
+    ?? getField(root, 'current_payment_due', 'currentPaymentDue');
   const paymentInformation = [
     ['New Balance Total', formatMoney(getField(summary, 'new_balance_total', 'newBalanceTotal'))],
+    ...(currentPaymentDue !== undefined ? [['Current Payment Due', formatMoney(currentPaymentDue)]] : []),
     ['Total Minimum Payment Due', formatMoney(getField(summary, 'total_minimum_payment_due', 'totalMinimumPaymentDue'))],
     ['Payment Due Date', formatStatementDate(getField(root, 'payment_due_date', 'paymentDueDate'))],
   ];
 
   return (
     <div className="extracted-statement-summary">
-      <div className="extracted-summary-heading">
-        <h3>Extracted summary</h3>
-        <p>Structured values to compare with the first page of the PDF.</p>
-      </div>
       <div className="extracted-summary-grid">
         <section aria-labelledby="account-summary-heading">
           <h4 id="account-summary-heading">Account Summary / Payment Information</h4>
           <dl>
             {accountSummary.map(([label, value]) => (
-              <div key={label}>
+              <div key={label} className={label === 'New Balance Total' ? 'summary-divider' : undefined}>
                 <dt>{label}</dt>
                 <dd>{value}</dd>
               </div>
             ))}
           </dl>
         </section>
-        <section aria-labelledby="payment-information-heading">
-          <h4 id="payment-information-heading">Payment Information</h4>
+        <section aria-label="Payment information">
           <dl>
             {paymentInformation.map(([label, value]) => (
-              <div key={label}>
+              <div key={label} className={label === 'Total Minimum Payment Due' ? 'summary-divider' : undefined}>
                 <dt>{label}</dt>
                 <dd>{value}</dd>
               </div>
@@ -736,7 +835,18 @@ export function JsonStatements() {
               {statementData !== null && (
                 <>
                   <ExtractedStatementSummary data={statementData} />
-                  <ExtractedTransactions data={statementData} />
+                  <ExtractedTransactions data={statementData} onCategorySaved={(transactionId, category) => {
+                    setStatementData((current: unknown) => {
+                      const root = asRecord(current);
+                      if (!root || !Array.isArray(root.transactions)) return current;
+                      return { ...root, transactions: root.transactions.map((value: unknown) => {
+                        const transaction = asRecord(value);
+                        return getField(transaction, 'transaction_id', 'transactionId') === transactionId
+                          ? { ...transaction, category_id: category.id, category: category.name }
+                          : value;
+                      }) };
+                    });
+                  }} />
                   <ExtractedDepositStatement data={statementData} />
                   <div className="raw-json-heading">
                     <h3>Raw JSON</h3>

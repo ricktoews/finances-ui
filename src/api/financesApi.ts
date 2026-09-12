@@ -1,4 +1,7 @@
 import type {
+  AvailableReport,
+  Category,
+  ReportTransactions,
   Expense,
   ExpensesReport,
   RawExpense,
@@ -12,8 +15,78 @@ import type {
 
 const API_BASE_URL = 'https://finances.toews-api.com';
 
+export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
+  const response = await fetch(`${API_BASE_URL}/categories`, { signal });
+  if (!response.ok) throw new Error(`Unable to load categories (${response.status})`);
+  const data: unknown = await response.json();
+  if (!Array.isArray(data) || !data.every((item) =>
+    item && Number.isInteger(item.id) && typeof item.name === 'string',
+  )) throw new Error('Unable to load categories: unexpected response.');
+  return (data as Category[]).sort((a, b) => a.name.localeCompare(b.name));
+}
+
+export async function setTransactionCategory(transactionId: string, categoryId: number): Promise<void> {
+  const response = await fetch(`${API_BASE_URL}/transaction-categories`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transaction_id: transactionId, category_id: categoryId }),
+  });
+  if (!response.ok) throw new Error(`Unable to save category (${response.status}). Please try again.`);
+}
+
+export async function getReports(signal?: AbortSignal): Promise<AvailableReport[]> {
+  const response = await fetch(`${API_BASE_URL}/reports`, { signal });
+
+  if (!response.ok) {
+    throw new Error(`Unable to load reports (${response.status})`);
+  }
+
+  const data = await response.json();
+  if (!data || !Array.isArray(data.reports)) {
+    throw new Error('Unable to load reports: unexpected response.');
+  }
+
+  return data.reports;
+}
+
 export function getStatementPdfUrl(statementId: string): string {
   return `${API_BASE_URL}/statements/${encodeURIComponent(statementId)}/pdf`;
+}
+
+export async function getReportTransactions(
+  reportId: string,
+  signal?: AbortSignal,
+): Promise<ReportTransactions> {
+  const response = await fetch(
+    `${API_BASE_URL}/reports/${encodeURIComponent(reportId)}/transactions`,
+    { signal },
+  );
+  if (!response.ok) {
+    throw new Error(`Unable to load report transactions (${response.status})`);
+  }
+  const data = await response.json();
+  if (!data || !Array.isArray(data.transactions) || typeof data.currency !== 'string') {
+    throw new Error('Unable to load report transactions: unexpected response.');
+  }
+  return {
+    currency: data.currency,
+    transactions: data.transactions.map((transaction: RawTransaction & {
+      transaction_id?: string;
+      report_category?: string;
+      report_label?: string;
+      financial_institution?: string;
+      source_json?: string;
+    }, index: number) => ({
+      ...normalizeTransaction({
+        ...transaction,
+        id: transaction.transaction_id,
+        category: transaction.report_category,
+        account_name: transaction.financial_institution,
+      }, index),
+      sourceFile: transaction.source_json ?? '',
+      reportLabel: transaction.report_label?.trim() ?? '',
+    })),
+  };
 }
 
 export async function getStatementPdf(
@@ -236,9 +309,11 @@ export async function getVerifiedStatementFiles(
 export async function getVerifiedStatementData(
   year: string,
   fileName: string,
+  signal?: AbortSignal,
 ): Promise<unknown> {
   const response = await fetch(
     `${API_BASE_URL}/verified-statements/${encodeURIComponent(year)}/files/${encodeURIComponent(fileName)}`,
+    { signal },
   );
 
   if (!response.ok) {

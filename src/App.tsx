@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
 import {
   getExpensesReport,
   getStatements,
@@ -8,9 +8,12 @@ import './App.css';
 import { MonthlyExpenses } from './components/MonthlyExpenses';
 import { MonthlyIncome } from './components/MonthlyIncome';
 import { JsonStatements } from './components/JsonStatements';
+import { ReportsPage } from './components/ReportsPage';
 import { StatementsTable } from './components/StatementsTable';
 import { YearlyExpensesChart } from './components/YearlyExpensesChart';
 import type { Expense, ExpensesReport, Statement, Transaction } from './types/finance';
+
+const VerifiedStatementsPage = lazy(() => import('./components/VerifiedStatementsPage').then((module) => ({ default: module.VerifiedStatementsPage })));
 
 const currentYear = String(new Date().getFullYear());
 const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
@@ -37,9 +40,11 @@ function getStatementMonth(statement: Statement): string {
   return (statement.periodEnd || statement.periodStart).slice(5, 7);
 }
 
-type Route = '/' | '/statements' | '/json-statements';
+type Route = '/' | '/backup-statements' | '/statements' | '/json-statements' | '/reports';
 
 function getRoute(): Route {
+  if (window.location.pathname === '/backup-statements') return '/backup-statements';
+  if (window.location.pathname === '/reports') return '/reports';
   if (window.location.pathname === '/statements') return '/statements';
   if (window.location.pathname === '/json-statements') return '/json-statements';
   return '/';
@@ -134,6 +139,7 @@ function App() {
   }
 
   useEffect(() => {
+    if (route !== '/' && route !== '/backup-statements') return;
     let isMounted = true;
 
     async function loadStatements() {
@@ -169,7 +175,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [route]);
 
   useEffect(() => {
     if (!selectedStatement) {
@@ -213,7 +219,7 @@ function App() {
   }, [selectedStatement]);
 
   useEffect(() => {
-    if (combinedStatements.length === 0) {
+    if (route !== '/' || combinedStatements.length === 0) {
       return;
     }
 
@@ -253,9 +259,10 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [combinedStatements]);
+  }, [route, combinedStatements]);
 
   useEffect(() => {
+    if (route !== '/') return;
     let isMounted = true;
 
     async function loadYearlyExpenses() {
@@ -315,9 +322,10 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [selectedYear, selectedYearlyExpenseCategory]);
+  }, [route, selectedYear, selectedYearlyExpenseCategory]);
 
   useEffect(() => {
+    if (route !== '/') return;
     let isMounted = true;
 
     async function loadExpenses() {
@@ -354,7 +362,7 @@ function App() {
     return () => {
       isMounted = false;
     };
-  }, [selectedExpenseMonth, selectedYear]);
+  }, [route, selectedExpenseMonth, selectedYear]);
 
   useEffect(() => {
     if (!selectedExpenseCategory) {
@@ -463,7 +471,7 @@ function App() {
   }
 
   return (
-    <main className={`app-shell${route === '/json-statements' ? ' json-statements-shell' : ''}`}>
+    <main className={`app-shell${(route === '/json-statements' || route === '/statements') ? ' json-statements-shell' : ''}`}>
       <header className="dashboard-header">
         <a className="site-title" href="/" onClick={(event) => {
           event.preventDefault();
@@ -502,14 +510,28 @@ function App() {
           >
             JSON Statements
           </a>
+          <a
+            href="/reports"
+            aria-current={route === '/reports' ? 'page' : undefined}
+            onClick={(event) => {
+              event.preventDefault();
+              navigate('/reports');
+            }}
+          >
+            Reports
+          </a>
+          <a href="/backup-statements" aria-current={route === '/backup-statements' ? 'page' : undefined}
+            onClick={(event) => { event.preventDefault(); navigate('/backup-statements'); }}>
+            Backup Statements
+          </a>
         </nav>
       </header>
 
-      {route !== '/json-statements' && isLoading && (
+      {(route === '/' || route === '/backup-statements') && isLoading && (
         <p className="status-message">Loading statements...</p>
       )}
 
-      {route !== '/json-statements' && error && !isLoading && (
+      {(route === '/' || route === '/backup-statements') && error && !isLoading && (
         <div className="status-message error-message" role="alert">
           {error}
         </div>
@@ -578,10 +600,10 @@ function App() {
         </>
       )}
 
-      {!isLoading && !error && route === '/statements' && (
+      {!isLoading && !error && route === '/backup-statements' && (
         <>
           <div className="page-heading">
-            <h1>Statements</h1>
+            <h1>Backup Statements</h1>
             <p>Browse imported bank and credit card statements by period.</p>
           </div>
 
@@ -658,7 +680,9 @@ function App() {
         </>
       )}
 
+      {route === '/statements' && <Suspense fallback={<p className="status-message" role="status">Loading statements…</p>}><VerifiedStatementsPage /></Suspense>}
       {route === '/json-statements' && <JsonStatements />}
+      {route === '/reports' && <ReportsPage />}
     </main>
   );
 }

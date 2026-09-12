@@ -61,6 +61,16 @@ export type Transaction = {
   amount: number | null;
 };
 
+export type ReportTransaction = Transaction & {
+  sourceFile: string;
+  reportLabel: string;
+};
+
+export type ReportTransactions = {
+  currency: string;
+  transactions: ReportTransaction[];
+};
+
 export type RawExpense = {
   id?: string | number;
   transaction_date?: string;
@@ -123,3 +133,19 @@ export type ExpensesReport = {
   summary: ExpenseSummary;
   transactions: Expense[];
 };
+export type AvailableReport = {
+  report_id: string;
+  title: string;
+  description: string;
+  report_type: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  period_start: string;
+  period_end: string;
+  currency: string;
+  grand_total: string | number;
+  transaction_count: number;
+  source_statement_count: number;
+};
+export type Category = { id: number; name: string };
