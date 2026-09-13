@@ -114,6 +114,220 @@ function getTransactionSection(type: unknown): string {
   }
 }
 
+function CapitalOneTransactions({ root, transactions, summary, categories, onCategorySaved }: {
+  root: JsonRecord | null;
+  transactions: JsonRecord[];
+  summary: JsonRecord | null;
+  categories: Category[];
+  onCategorySaved: (transactionId: string, category: Category) => void;
+}) {
+  const type = (row: JsonRecord) => String(getField(row, 'type') ?? '').toLowerCase();
+  const payments = transactions.filter((row) => ['payment', 'credit', 'adjustment'].includes(type(row)));
+  const charges = transactions.filter((row) => !['payment', 'credit', 'adjustment', 'fee', 'interest'].includes(type(row)));
+  const fees = transactions.filter((row) => type(row) === 'fee');
+  const interest = transactions.filter((row) => type(row) === 'interest');
+  const last4 = getField(root, 'account_number_last4', 'accountNumberLast4');
+  const name = getField(root, 'cardholder_name', 'cardholderName');
+  const account = [typeof name === 'string' ? name : 'Card', typeof last4 === 'string' ? `#${last4}` : ''].filter(Boolean).join(' ');
+  const ytd = asRecord(getField(root, 'year_to_date', 'yearToDate'));
+  const sum = (rows: JsonRecord[]) => {
+    const cents = rows.map((row) => moneyInCents(getField(row, 'amount')));
+    return cents.some((value) => value === null) ? undefined : cents.reduce<number>((total, value) => total + (value ?? 0), 0) / 100;
+  };
+  const chargeTotal = sum(charges);
+  const date = (value: unknown) => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return '—';
+    const parsed = new Date(`${value}T00:00:00Z`);
+    return Number.isNaN(parsed.getTime()) ? '—' : parsed.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+  };
+  const detailTable = (rows: JsonRecord[], label: string, total?: unknown) => <table aria-label={label}>
+    <colgroup><col style={{ width: '16%' }} /><col style={{ width: '16%' }} /><col /><col style={{ width: '24%' }} /></colgroup>
+    <thead><tr><th scope="col">Trans Date</th><th scope="col">Post Date</th><th scope="col">Description</th><th scope="col">Amount</th></tr></thead>
+    <tbody>{rows.map((row, index) => {
+      const id = String(getField(row, 'transaction_id', 'transactionId') ?? '');
+      return <tr key={id || index}>
+        <td>{date(getField(row, 'transaction_date', 'transactionDate', 'date'))}</td>
+        <td>{date(getField(row, 'posting_date', 'postingDate'))}</td>
+        <td className="transaction-description">{String(getField(row, 'description') ?? '—')}
+          <TransactionCategorySelect transactionId={id} description={String(getField(row, 'description') ?? '')}
+            categoryId={getField(row, 'category_id', 'categoryId')} categoryName={String(getField(row, 'category') ?? '')}
+            categories={categories} onSaved={onCategorySaved} />
+        </td>
+        <td className="transaction-amount">{formatMoney(getField(row, 'amount'))}</td>
+      </tr>;
+    })}
+    {total !== undefined && <tr className="capital-one-card-total"><th scope="row" colSpan={3}>{account}: Total Transactions</th><td className="transaction-amount">{formatMoney(total)}</td></tr>}
+    </tbody>
+  </table>;
+  const totalLine = (label: string, value: unknown) => <div className="capital-one-period-total"><dt>{label}</dt><dd>{formatMoney(value)}</dd></div>;
+  return <section className="capital-one-transactions" aria-labelledby="capital-one-transactions-heading">
+    <hr className="prime-payment-separator" />
+    <div className="capital-one-transactions-box">
+      <h3 id="capital-one-transactions-heading">Transactions</h3>
+      <section className="capital-one-transaction-group" aria-label="Payments, Credits and Adjustments">
+        <h4>{account}: Payments, Credits and Adjustments</h4>
+        {detailTable(payments, 'Payments, Credits and Adjustments')}
+      </section>
+      <section className="capital-one-transaction-group" aria-label="Transactions">
+        <h4>{account}: Transactions</h4>
+        {detailTable(charges, 'Transactions', chargeTotal)}
+        <dl>{totalLine('Total Transactions for This Period', chargeTotal)}</dl>
+      </section>
+      <section className="capital-one-transaction-group" aria-label="Fees">
+        <h4 className="capital-one-band">Fees</h4>
+        {detailTable(fees, 'Fees')}
+        <dl>{totalLine('Total Fees for This Period', getField(summary, 'fees_charged', 'feesCharged') ?? sum(fees))}</dl>
+      </section>
+      <section className="capital-one-transaction-group" aria-label="Interest Charged">
+        <h4 className="capital-one-band">Interest Charged</h4>
+        <dl className="capital-one-interest-lines">
+          {interest.length > 0 ? interest.map((row, index) => <div key={index}><dt>{String(getField(row, 'description') ?? 'Interest Charged')}</dt><dd>{formatMoney(getField(row, 'amount'))}</dd></div>) : <>
+            <div><dt>Interest Charge on Purchases</dt><dd>{formatMoney(getField(summary, 'interest_on_purchases', 'interest_charge_on_purchases'))}</dd></div>
+            <div><dt>Interest Charge on Cash Advances</dt><dd>{formatMoney(getField(summary, 'interest_on_cash_advances', 'interest_charge_on_cash_advances'))}</dd></div>
+            <div><dt>Interest Charge on Other Balances</dt><dd>{formatMoney(getField(summary, 'interest_on_other_balances', 'interest_charge_on_other_balances'))}</dd></div>
+          </>}
+        </dl>
+        <dl>{totalLine('Total Interest for This Period', getField(summary, 'interest_charged', 'interestCharged') ?? sum(interest))}</dl>
+      </section>
+      <section className="capital-one-transaction-group" aria-label="Totals Year-to-Date">
+        <h4 className="capital-one-band">Totals Year-to-Date</h4>
+        <dl>
+          {totalLine('Total Fees charged', getField(ytd, 'fees_charged', 'feesCharged') ?? getField(summary, 'total_fees_year_to_date', 'fees_charged_ytd'))}
+          {totalLine('Total Interest charged', getField(ytd, 'interest_charged', 'interestCharged') ?? getField(summary, 'total_interest_year_to_date', 'interest_charged_ytd'))}
+        </dl>
+      </section>
+    </div>
+  </section>;
+}
+
+function PrimeVisaActivity({ root, transactions, categories, onCategorySaved }: {
+  root: JsonRecord | null;
+  transactions: JsonRecord[];
+  categories: Category[];
+  onCategorySaved: (transactionId: string, category: Category) => void;
+}) {
+  const summary = asRecord(getField(root, 'summary'));
+  const yearToDate = asRecord(getField(root, 'year_to_date', 'yearToDate'));
+  const closingDate = String(getField(root, 'statement_closing_date', 'period_end', 'periodEnd') ?? '');
+  const year = /^\d{4}-/.test(closingDate) ? closingDate.slice(0, 4) : '';
+  const fees = getField(yearToDate, 'fees_charged', 'feesCharged')
+    ?? getField(summary, 'total_fees_year_to_date', 'fees_charged_ytd');
+  const interest = getField(yearToDate, 'interest_charged', 'interestCharged')
+    ?? getField(summary, 'total_interest_year_to_date', 'interest_charged_ytd');
+  const labelFor = (transaction: JsonRecord) => {
+    const type = String(getField(transaction, 'type') ?? '').toLowerCase();
+    return ({ payment: 'PAYMENTS AND OTHER CREDITS', credit: 'PAYMENTS AND OTHER CREDITS', purchase: 'PURCHASE', fee: 'FEES CHARGED', interest: 'INTEREST CHARGED', cash_advance: 'CASH ADVANCES', balance_transfer: 'BALANCE TRANSFERS' } as Record<string, string>)[type] ?? 'OTHER ACTIVITY';
+  };
+  const groups = new Map<string, JsonRecord[]>();
+  for (const transaction of transactions) {
+    const label = labelFor(transaction);
+    const rows = groups.get(label) ?? [];
+    rows.push(transaction);
+    groups.set(label, rows);
+  }
+  return <section className="prime-account-activity" aria-labelledby="prime-activity-heading">
+    <hr className="prime-payment-separator" />
+    <h3 id="prime-activity-heading">ACCOUNT ACTIVITY</h3>
+    {transactions.length === 0 ? <p>No account activity for this statement.</p> : <table>
+      <colgroup><col style={{ width: '17%' }} /><col /><col style={{ width: '24%' }} /></colgroup>
+      <thead><tr><th scope="col">Date of<br />Transaction</th><th scope="col">Merchant Name or Transaction Description</th><th scope="col">$ Amount</th></tr></thead>
+      <tbody>{[...groups].map(([label, rows]) => <Fragment key={label}>
+        <tr className="prime-activity-group"><th scope="rowgroup" colSpan={3}>{label}</th></tr>
+        {rows.map((transaction, index) => {
+          const id = String(getField(transaction, 'transaction_id', 'transactionId') ?? '');
+          return <tr key={id || index}>
+            <td>{formatTransactionDate(getField(transaction, 'transaction_date', 'transactionDate', 'date'))}</td>
+            <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}
+              <TransactionCategorySelect transactionId={id} description={String(getField(transaction, 'description') ?? '')}
+                categoryId={getField(transaction, 'category_id', 'categoryId')} categoryName={String(getField(transaction, 'category') ?? '')}
+                categories={categories} onSaved={onCategorySaved} />
+            </td>
+            <td className="transaction-amount">{formatMoney(getField(transaction, 'amount'))}</td>
+          </tr>;
+        })}
+      </Fragment>)}</tbody>
+    </table>}
+    <section className="prime-ytd" aria-labelledby="prime-ytd-heading">
+      <div className="prime-ytd-box">
+        <h4 id="prime-ytd-heading">{year && `${year} `}Totals Year-to-Date</h4>
+        <dl>
+          <div><dt>Total fees charged{year && ` in ${year}`}</dt><dd>{formatMoney(fees)}</dd></div>
+          <div><dt>Total interest charged{year && ` in ${year}`}</dt><dd>{formatMoney(interest)}</dd></div>
+        </dl>
+      </div>
+      <p>Year-to-date totals do not reflect any fee or interest refunds<br />you may have received.</p>
+    </section>
+  </section>;
+}
+
+function AmexTransactions({ transactions, summary, categories, onCategorySaved }: {
+  transactions: JsonRecord[];
+  summary: JsonRecord | null;
+  categories: Category[];
+  onCategorySaved: (transactionId: string, category: Category) => void;
+}) {
+  const type = (transaction: JsonRecord) => String(getField(transaction, 'type') ?? '').toLowerCase();
+  const payments = transactions.filter((row) => type(row) === 'payment');
+  const credits = transactions.filter((row) => type(row) === 'credit');
+  const sum = (rows: JsonRecord[]) => {
+    const cents = rows.reduce<number | null>((total, row) => {
+      const amount = moneyInCents(getField(row, 'amount'));
+      return total === null || amount === null ? null : total + amount;
+    }, 0);
+    return cents === null ? undefined : cents / 100;
+  };
+  const groups = [
+    { title: 'Payments and Credits', rows: [...payments, ...credits], total: getField(summary, 'payments_and_other_credits', 'paymentsAndOtherCredits'), label: 'Total Payments and Credits' },
+    { title: 'New Charges', rows: transactions.filter((row) => type(row) === 'purchase'), total: getField(summary, 'purchases_and_adjustments', 'purchasesAndAdjustments'), label: 'Total New Charges' },
+    { title: 'Fees', rows: transactions.filter((row) => type(row) === 'fee'), total: getField(summary, 'fees_charged', 'feesCharged'), label: 'Total Fees for this Period' },
+    { title: 'Interest Charged', rows: transactions.filter((row) => type(row) === 'interest'), total: getField(summary, 'interest_charged', 'interestCharged'), label: 'Total Interest Charged for this Period' },
+    { title: 'Other Transactions', rows: transactions.filter((row) => !['payment', 'credit', 'purchase', 'fee', 'interest'].includes(type(row))), total: undefined, label: 'Total Other Transactions' },
+  ];
+  return <div className="amex-transactions">
+    {groups.filter((group) => group.rows.length > 0 || (group.total !== undefined && group.title !== 'Interest Charged')).map((group) => {
+      const hasSummary = ['Payments and Credits', 'New Charges'].includes(group.title);
+      const detailGroups = group.title === 'Payments and Credits'
+        ? [{ label: 'Payments', rows: payments }, { label: 'Credits', rows: credits }]
+        : [{ label: '', rows: group.rows }];
+      return <section className="amex-transaction-section" key={group.title} aria-label={group.title}>
+        <header className="amex-section-heading"><h3>{group.title}</h3>{hasSummary && <h4>Summary</h4>}</header>
+        {hasSummary && <div className="amex-summary-lines">
+          <div className="amex-total-heading">Total</div>
+          <dl>
+            {group.title === 'Payments and Credits' && <>
+              <div><dt>Payments</dt><dd>{formatMoney(sum(payments))}</dd></div>
+              <div><dt>Credits</dt><dd>{formatMoney(sum(credits))}</dd></div>
+            </>}
+            <div className="amex-total-line"><dt>{group.label}</dt><dd>{formatMoney(group.total ?? sum(group.rows))}</dd></div>
+          </dl>
+        </div>}
+        {group.rows.length > 0 && <>
+          {hasSummary && <div className="amex-detail-heading"><strong>Detail</strong>{group.title === 'Payments and Credits' && <small>*Indicates posting date</small>}</div>}
+          {detailGroups.filter((detail) => detail.rows.length > 0).map((detail) => <table className="amex-detail-table" key={detail.label} aria-label={`${group.title} ${detail.label} detail`}>
+            <colgroup><col style={{ width: '20%' }} /><col /><col style={{ width: '24%' }} /></colgroup>
+            <thead><tr><th colSpan={2} scope="colgroup">{detail.label || 'Detail'}</th><th scope="col">Amount</th></tr></thead>
+            <tbody>{detail.rows.map((transaction, index) => {
+              const id = String(getField(transaction, 'transaction_id', 'transactionId') ?? '');
+              const posting = group.title === 'Payments and Credits' ? getField(transaction, 'posting_date', 'postingDate') : undefined;
+              const date = posting ?? getField(transaction, 'transaction_date', 'transactionDate', 'date');
+              return <tr key={id || index}>
+                <td>{formatStatementDate(date)}{posting ? '*' : ''}</td>
+                <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}
+                  <TransactionCategorySelect transactionId={id} description={String(getField(transaction, 'description') ?? '')}
+                    categoryId={getField(transaction, 'category_id', 'categoryId')} categoryName={String(getField(transaction, 'category') ?? '')}
+                    categories={categories} onSaved={onCategorySaved} />
+                </td>
+                <td className="transaction-amount">{formatMoney(getField(transaction, 'amount'))}</td>
+              </tr>;
+            })}</tbody>
+          </table>)}
+        </>}
+        {!hasSummary && <div className="amex-summary-lines"><div className="amex-total-heading">Amount</div><dl><div className="amex-total-line"><dt>{group.label}</dt><dd>{formatMoney(group.total ?? sum(group.rows))}</dd></div></dl></div>}
+      </section>;
+    })}
+  </div>;
+}
+
 export function ExtractedTransactions({ data, onCategorySaved }: {
   data: unknown;
   onCategorySaved: (transactionId: string, category: Category) => void;
@@ -156,6 +370,36 @@ export function ExtractedTransactions({ data, onCategorySaved }: {
     observer.observe(heading);
     return () => observer.disconnect();
   }, [transactions.length]);
+
+  if (/american\s+express|\bamex\b/i.test(String(getField(root, 'financial_institution', 'financialInstitution') ?? ''))) {
+    return <>
+      {categoriesLoading && <p className="panel-state" role="status">Loading categories…</p>}
+      {categoriesError && <div className="panel-state error-message" role="alert">{categoriesError} <button onClick={() => {
+        setCategoriesError(null); setCategoriesLoading(true); setCategoryAttempt((value) => value + 1);
+      }}>Retry categories</button></div>}
+      <AmexTransactions transactions={transactions} summary={summary} categories={categories} onCategorySaved={onCategorySaved} />
+    </>;
+  }
+
+  if (/^(?:amazon\s+)?prime\s+visa$/i.test(String(getField(root, 'card_product', 'cardProduct') ?? '').trim())) {
+    return <>
+      {categoriesLoading && <p className="panel-state" role="status">Loading categories…</p>}
+      {categoriesError && <div className="panel-state error-message" role="alert">{categoriesError} <button onClick={() => {
+        setCategoriesError(null); setCategoriesLoading(true); setCategoryAttempt((value) => value + 1);
+      }}>Retry categories</button></div>}
+      <PrimeVisaActivity root={root} transactions={transactions} categories={categories} onCategorySaved={onCategorySaved} />
+    </>;
+  }
+
+  if (/capital\s+one/i.test(String(getField(root, 'financial_institution', 'financialInstitution') ?? ''))) {
+    return <>
+      {categoriesLoading && <p className="panel-state" role="status">Loading categories…</p>}
+      {categoriesError && <div className="panel-state error-message" role="alert">{categoriesError} <button onClick={() => {
+        setCategoriesError(null); setCategoriesLoading(true); setCategoryAttempt((value) => value + 1);
+      }}>Retry categories</button></div>}
+      <CapitalOneTransactions root={root} transactions={transactions} summary={summary} categories={categories} onCategorySaved={onCategorySaved} />
+    </>;
+  }
 
   if (transactions.length === 0) return null;
 
@@ -521,6 +765,8 @@ export function ExtractedDepositStatement({ data, categories = [], onCategorySav
 }
 
 function AmexStatementSummary({ root, summary }: { root: JsonRecord; summary: JsonRecord }) {
+  const autoPayAmount = getField(summary, 'autopay_amount', 'auto_pay_amount', 'autoPayAmount')
+    ?? getField(root, 'autopay_amount', 'auto_pay_amount', 'autoPayAmount');
   const newBalance = formatMoney(getField(summary, 'new_balance_total', 'newBalanceTotal'));
   const minimumPayment = formatMoney(getField(summary, 'total_minimum_payment_due', 'totalMinimumPaymentDue'));
   const rows = [
@@ -539,6 +785,7 @@ function AmexStatementSummary({ root, summary }: { root: JsonRecord; summary: Js
 
   return <div className="extracted-statement-summary amex-statement-summary">
     <div className="amex-summary-grid">
+      <div className="amex-left-column">
       <section className="amex-balance-block" aria-label="New balance and payment due">
         <dl>
           <div><dt>New Balance</dt><dd>{newBalance}</dd></div>
@@ -546,6 +793,14 @@ function AmexStatementSummary({ root, summary }: { root: JsonRecord; summary: Js
           <div className="amex-payment-date"><dt>Payment Due Date</dt><dd>{formatStatementDate(getField(root, 'payment_due_date', 'paymentDueDate'))}</dd></div>
         </dl>
       </section>
+      <section className="amex-payment-coupon" aria-label="Payment coupon">
+        <dl>
+          <div><dt>Payment Due Date</dt><dd>{formatStatementDate(getField(root, 'payment_due_date', 'paymentDueDate'))}</dd></div>
+          <div><dt>New Balance</dt><dd>{newBalance}</dd></div>
+          <div><dt>AutoPay Amount</dt><dd>{formatMoney(autoPayAmount)}</dd></div>
+        </dl>
+      </section>
+      </div>
       <section className="amex-account-block" aria-labelledby="amex-account-summary-heading">
         <h4 id="amex-account-summary-heading">Account Summary</h4>
         <div className="amex-account-box">
@@ -561,13 +816,100 @@ function AmexStatementSummary({ root, summary }: { root: JsonRecord; summary: Js
   </div>;
 }
 
+function PrimeVisaSummary({ root, summary }: { root: JsonRecord; summary: JsonRecord }) {
+  const rows = [
+    ['Previous Balance', formatMoney(getField(summary, 'previous_balance', 'previousBalance'))],
+    ['Payment, Credits', formatMoney(getField(summary, 'payments_and_other_credits', 'paymentsAndOtherCredits'))],
+    ['Purchases', formatMoney(getField(summary, 'purchases_and_adjustments', 'purchasesAndAdjustments'))],
+    ['Cash Advances', formatMoney(getField(summary, 'cash_advances', 'cashAdvances'))],
+    ['Balance Transfers', formatMoney(getField(summary, 'balance_transfers', 'balanceTransfers'))],
+    ['Fees Charged', formatMoney(getField(summary, 'fees_charged', 'feesCharged'))],
+    ['Interest Charged', formatMoney(getField(summary, 'interest_charged', 'interestCharged'))],
+    ['New Balance', formatMoney(getField(summary, 'new_balance_total', 'newBalanceTotal'))],
+    ['Opening/Closing Date', `${formatStatementDate(getField(root, 'period_start', 'periodStart'))} – ${formatStatementDate(getField(root, 'period_end', 'periodEnd', 'statement_closing_date'))}`],
+    ['Credit Access Line', formatMoney(getField(summary, 'total_credit_line', 'totalCreditLine'))],
+    ['Available Credit', formatMoney(getField(summary, 'total_credit_available', 'totalCreditAvailable'))],
+    ['Cash Access Line', formatMoney(getField(summary, 'cash_access_line', 'cashAccessLine', 'cash_credit_line'))],
+    ['Available for Cash', formatMoney(getField(summary, 'available_for_cash', 'availableForCash', 'cash_credit_available'))],
+    ['Past Due Amount', formatMoney(getField(summary, 'past_due_amount', 'pastDueAmount'))],
+    ['Balance over the Credit Access Line', formatMoney(getField(summary, 'balance_over_credit_access_line', 'balanceOverCreditAccessLine'))],
+  ];
+  const last4 = getField(root, 'account_number_last4', 'accountNumberLast4');
+  return <section className="prime-visa-summary" aria-labelledby="prime-account-summary-heading">
+    <h3 id="prime-account-summary-heading">ACCOUNT SUMMARY</h3>
+    <div className="prime-summary-box">
+      {typeof last4 === 'string' && /^\d{4}$/.test(last4) && <p className="prime-account-number">Account Number: XXXX XXXX XXXX {last4}</p>}
+      <dl>{rows.map(([label, value]) => <div key={label} className={['New Balance', 'Past Due Amount', 'Balance over the Credit Access Line'].includes(label) ? 'prime-summary-total' : undefined}>
+        <dt>{label}</dt><dd>{value}</dd>
+      </div>)}</dl>
+    </div>
+    <hr className="prime-payment-separator" />
+    <section className="prime-summary-box prime-payment-block" aria-label="Payment due information">
+      <dl>
+        <div><dt>Payment Due Date:</dt><dd>{formatStatementDate(getField(root, 'payment_due_date', 'paymentDueDate'))}</dd></div>
+        <div><dt>New Balance:</dt><dd>{formatMoney(getField(summary, 'new_balance_total', 'newBalanceTotal'))}</dd></div>
+        <div><dt>Minimum Payment Due:</dt><dd>{formatMoney(getField(summary, 'total_minimum_payment_due', 'totalMinimumPaymentDue'))}</dd></div>
+      </dl>
+    </section>
+  </section>;
+}
+
+function CapitalOneSummary({ root, summary }: { root: JsonRecord; summary: JsonRecord }) {
+  const money = (...names: string[]) => formatMoney(getField(summary, ...names));
+  const newBalance = money('new_balance_total', 'newBalanceTotal');
+  const rows = [
+    ['Previous Balance', money('previous_balance', 'previousBalance')],
+    ['Payments', money('payments', 'total_payments')],
+    ['Other Credits', money('other_credits', 'otherCredits')],
+    ['Transactions', money('purchases_and_adjustments', 'purchasesAndAdjustments')],
+    ['Cash Advances', money('cash_advances', 'cashAdvances')],
+    ['Fees Charged', money('fees_charged', 'feesCharged')],
+    ['Interest Charged', money('interest_charged', 'interestCharged')],
+    ['New Balance', newBalance],
+  ];
+  const closingDate = getField(root, 'statement_closing_date', 'period_end', 'periodEnd');
+  const creditRows = [
+    ['Credit Limit', money('total_credit_line', 'totalCreditLine')],
+    [`Available Credit (as of ${formatLongStatementDate(closingDate)})`, money('total_credit_available', 'totalCreditAvailable')],
+    ['Cash Advance Credit Limit', money('cash_advance_credit_limit', 'cashAdvanceCreditLimit', 'cash_credit_line')],
+    ['Available Credit for Cash Advances', money('available_credit_for_cash_advances', 'availableCreditForCashAdvances', 'cash_credit_available')],
+  ];
+  return <div className="capital-one-summary">
+    <section aria-labelledby="capital-one-payment-heading">
+      <h3 id="capital-one-payment-heading">Payment Information</h3>
+      <div className="capital-one-payment-body">
+        <dl className="capital-one-payment-date"><dt>Payment Due Date</dt><dd>{formatLongStatementDate(getField(root, 'payment_due_date', 'paymentDueDate'))}</dd></dl>
+        <div className="capital-one-payment-amounts">
+          <dl><dt>New Balance</dt><dd>{newBalance}</dd></dl>
+          <dl><dt>Minimum Payment Due</dt><dd>{money('total_minimum_payment_due', 'totalMinimumPaymentDue')}</dd></dl>
+        </div>
+      </div>
+    </section>
+    <section aria-labelledby="capital-one-account-heading">
+      <h3 id="capital-one-account-heading">Account Summary</h3>
+      <div className="capital-one-account-body">
+        <dl>{rows.map(([label, value]) => <div key={label} className={label === 'New Balance' ? 'capital-one-new-balance' : undefined}><dt>{label}</dt><dd>{label === 'New Balance' && value !== 'Not extracted' ? `= ${value}` : value}</dd></div>)}</dl>
+        <dl className="capital-one-credit-details">{creditRows.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>
+      </div>
+    </section>
+  </div>;
+}
+
 export function ExtractedStatementSummary({ data }: { data: unknown }) {
   const root = asRecord(data);
   const summary = asRecord(getField(root, 'summary'));
 
   if (!root || !summary) return null;
 
+  const product = String(getField(root, 'card_product', 'cardProduct') ?? '');
+  if (/^(?:amazon\s+)?prime\s+visa$/i.test(product.trim())) {
+    return <PrimeVisaSummary root={root} summary={summary} />;
+  }
+
   const institution = String(getField(root, 'financial_institution', 'financialInstitution') ?? '');
+  if (/capital\s+one/i.test(institution)) {
+    return <CapitalOneSummary root={root} summary={summary} />;
+  }
   if (/american\s+express|\bamex\b/i.test(institution)) {
     return <AmexStatementSummary root={root} summary={summary} />;
   }
