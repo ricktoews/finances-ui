@@ -86,6 +86,21 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   const counts = categoryCounts(chartFiles);
   const highlightedCategory = file && categoryHighlight?.fileName === file.fileName && counts.some((entry) => entry.name === categoryHighlight.category)
     ? categoryHighlight.category : null;
+  const monthlyCategoryTotals = highlightedCategory ? months.map((item) => {
+    const monthFiles = files.filter((entry) => statementDate(entry).slice(0, 7) === `${year}-${item.value}`);
+    const category = categoryCounts(monthFiles).find((entry) => entry.name === highlightedCategory);
+    return {
+      ...item,
+      amountCents: category?.amountCents ?? 0,
+      hasData: monthFiles.some((entry) => entry.data),
+      incomplete: monthFiles.some((entry) => entry.error || !entry.data) || Boolean(category?.missingAmounts),
+    };
+  }) : [];
+  const completeMonthlyAmounts = monthlyCategoryTotals
+    .filter((item) => item.hasData && !item.incomplete)
+    .map((item) => item.amountCents);
+  const monthCount = completeMonthlyAmounts.length;
+  const meanCents = monthCount ? completeMonthlyAmounts.reduce((sum, amount) => sum + amount, 0) / monthCount : null;
   const billCents = statementBillCents(chartFiles);
   const total = counts.reduce((sum, category) => sum + category.value, 0);
   function retry() { setError(null); setLoading(true); setSelected(''); setAttempt((value) => value + 1); }
@@ -137,10 +152,22 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
               {entry.name}
             </button>
             <span className="verified-category-totals">
-              <strong>{entry.value} ({percentage.format(entry.value / total)} of transactions)</strong>
-              <span>{currency.format(entry.amountCents / 100)}{entry.missingAmounts > 0 ? ' (incomplete)' : ''}</span>
-              <span>{billCents !== null && entry.missingAmounts === 0 ? `${percentage.format(entry.amountCents / billCents)} of bill` : 'Bill share unavailable'}</span>
+              <strong>{currency.format(entry.amountCents / 100)}{entry.missingAmounts > 0 ? ' (incomplete)' : billCents !== null ? ` (${percentage.format(entry.amountCents / billCents)})` : ' (bill share unavailable)'}</strong>
+              <span>{entry.value} ({percentage.format(entry.value / total)} of transactions)</span>
             </span>
+            {highlightedCategory === entry.name && <div className="verified-category-months">
+              <div className="verified-category-months-heading">
+                <h3>{entry.name} · {year}</h3>
+                <span>Average: {meanCents === null ? 'N/A' : currency.format(meanCents / 100)}</span>
+              </div>
+              <p>Average uses {monthCount} {monthCount === 1 ? 'month' : 'months'} with complete data, including zero totals.</p>
+              <p>Across all statements, grouped by closing month.</p>
+              <dl>{monthlyCategoryTotals.map((item) => <div key={item.value}>
+                <dt>{item.name}</dt>
+                <dd>{item.hasData ? `${currency.format(item.amountCents / 100)}${item.incomplete ? ' (incomplete)' : ''}` : 'No data'}</dd>
+              </div>)}</dl>
+              {undated.length > 0 && <p>Statements without a closing date are excluded.</p>}
+            </div>}
           </li>)}</ul>
         </div>}
       </section>
