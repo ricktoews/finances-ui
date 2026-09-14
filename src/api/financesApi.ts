@@ -255,9 +255,11 @@ export async function getStatements(): Promise<Statement[]> {
 
 export async function getVerifiedStatementFiles(
   year: string,
+  signal?: AbortSignal,
 ): Promise<VerifiedStatementFile[]> {
   const response = await fetch(
     `${API_BASE_URL}/verified-statements/${encodeURIComponent(year)}/files`,
+    { signal },
   );
 
   if (response.status === 404) {

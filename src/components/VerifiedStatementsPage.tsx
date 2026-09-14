@@ -1,3 +1,4 @@
+import { CategoryYearAverages } from './CategoryYearAverages';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
@@ -34,7 +35,7 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   const [month, setMonth] = useState('');
   const [selected, setSelected] = useState('');
   const [categoryHighlight, setCategoryHighlight] = useState<{ fileName: string; category: string } | null>(null);
-  const [showPdf, setShowPdf] = useState(true);
+  const [showPdf, setShowPdf] = useState(false);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [categoryAttempt, setCategoryAttempt] = useState(0);
@@ -84,6 +85,9 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   const file = files.find((candidate) => candidate.fileName === selected);
   const chartFiles = file ? [file] : visible;
   const counts = categoryCounts(chartFiles);
+  const chartCategories = counts.map((entry, colorIndex) => ({ ...entry, colorIndex, chartAmount: Math.abs(entry.amountCents) }))
+    .filter((entry) => !/^credit[\s_-]+card[\s_-]+payments?$/i.test(entry.name.trim()));
+  const chartHasAmounts = chartCategories.some((entry) => entry.chartAmount > 0);
   const highlightedCategory = file && categoryHighlight?.fileName === file.fileName && counts.some((entry) => entry.name === categoryHighlight.category)
     ? categoryHighlight.category : null;
   const monthlyCategoryTotals = highlightedCategory ? months.map((item) => {
@@ -140,10 +144,13 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
         <section className="content-section"><div className="section-heading"><h2>Statement</h2></div><p className="panel-state">Select a JSON file above to view its formatted statement.</p></section>
       </>}
       <section className="content-section"><div className="section-heading"><h2>Transactions by category</h2><span>{total} total</span></div>
-        <p className="verified-chart-note">{file ? 'Transactions for the selected statement’s full billing cycle.' : 'Transactions across this month’s statements, including their full billing periods.'} The chart shows transaction counts. Amounts are net totals, including payments and credits.</p>
+        <p className="verified-chart-note">{file ? 'Transactions for the selected statement’s full billing cycle.' : 'Transactions across this month’s statements, including their full billing periods.'} Wedges show the absolute size of each category’s net dollar total, excluding credit card payments. Credit card payments remain in the list. Tooltips and list amounts retain their signs.</p>
         <p className="verified-chart-note">{billCents === null ? 'Bill percentages are unavailable without a positive credit card statement balance for every statement shown.' : `Bill percentages use ${file ? 'the statement’s new balance' : 'the combined new balances'} of ${currency.format(billCents / 100)}.`}</p>
         {total === 0 ? <p className="panel-state">No transactions available to chart.</p> : <div className="verified-category-chart">
-          <div aria-label="Transaction count by category"><ResponsiveContainer width="100%" height={250}><PieChart><Pie data={counts} dataKey="value" nameKey="name" innerRadius={55} outerRadius={100} isAnimationActive={false}>{counts.map((entry, index) => <Cell key={entry.name} fill={colors[index % colors.length]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div>
+          {chartHasAmounts ? <div aria-label="Net dollar amounts by category, shown as absolute sizes"><ResponsiveContainer width="100%" height={250}><PieChart><Pie data={chartCategories} dataKey="chartAmount" nameKey="name" innerRadius={55} outerRadius={100} isAnimationActive={false}>{chartCategories.map((entry) => <Cell key={entry.name} fill={colors[entry.colorIndex % colors.length]} />)}</Pie><Tooltip formatter={(_value, name) => {
+            const category = counts.find((entry) => entry.name === name);
+            return [category ? `${currency.format(category.amountCents / 100)}${category.missingAmounts ? ' (incomplete)' : ''}` : 'Amount unavailable', name];
+          }} /></PieChart></ResponsiveContainer></div> : <p className="panel-state">No nonzero category totals to chart.</p>}
           <p className="verified-chart-note">{file ? 'Select a category to highlight its transactions. Select it again to clear the highlights.' : 'Select a statement to highlight transactions by category.'}</p>
           <ul>{counts.map((entry, index) => <li key={entry.name}>
             <span className="category-dot" style={{ background: colors[index % colors.length] }} />
@@ -156,6 +163,7 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
               <span>{entry.value} ({percentage.format(entry.value / total)} of transactions)</span>
             </span>
             {highlightedCategory === entry.name && <div className="verified-category-months">
+              <CategoryYearAverages year={year} category={entry.name} currentFiles={files} />
               <div className="verified-category-months-heading">
                 <h3>{entry.name} · {year}</h3>
                 <span>Average: {meanCents === null ? 'N/A' : currency.format(meanCents / 100)}</span>

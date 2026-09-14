@@ -1,37 +1,14 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from 'react';
-import {
-  getExpensesReport,
-  getStatements,
-  getStatementTransactions,
-} from './api/financesApi';
+import { lazy, Suspense, useEffect, useState } from 'react';
+import { getStatements, getStatementTransactions } from './api/financesApi';
 import './App.css';
-import { MonthlyExpenses } from './components/MonthlyExpenses';
-import { MonthlyIncome } from './components/MonthlyIncome';
 import { JsonStatements } from './components/JsonStatements';
 import { ReportsPage } from './components/ReportsPage';
 import { StatementsTable } from './components/StatementsTable';
-import { YearlyExpensesChart } from './components/YearlyExpensesChart';
-import type { Expense, ExpensesReport, Statement, Transaction } from './types/finance';
-
+import type { Statement, Transaction } from './types/finance';
 const VerifiedStatementsPage = lazy(() => import('./components/VerifiedStatementsPage').then((module) => ({ default: module.VerifiedStatementsPage })));
-
+const OverviewPage = lazy(() => import('./components/OverviewPage').then((module) => ({ default: module.OverviewPage })));
 const currentYear = String(new Date().getFullYear());
-const currentMonth = String(new Date().getMonth() + 1).padStart(2, '0');
-const monthKeys = Array.from({ length: 12 }, (_, index) =>
-  String(index + 1).padStart(2, '0'),
-);
-
-type MonthlyExpenseSummary = {
-  month: string;
-  total: number;
-  count: number;
-  transactions: Expense[];
-};
-
-function formatCategory(value: string): string {
-  return value.trim() || 'Uncategorized';
-}
-
+const monthKeys = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, '0'));
 function getStatementYear(statement: Statement): string {
   return (statement.periodEnd || statement.periodStart).slice(0, 4);
 }
@@ -71,57 +48,11 @@ function App() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [isTransactionsLoading, setIsTransactionsLoading] = useState(false);
   const [transactionsError, setTransactionsError] = useState<string | null>(null);
-  const [incomeTransactions, setIncomeTransactions] = useState<Transaction[]>([]);
-  const [isIncomeLoading, setIsIncomeLoading] = useState(false);
-  const [incomeError, setIncomeError] = useState<string | null>(null);
-  const [selectedIncomeMonth, setSelectedIncomeMonth] = useState('all');
-  const [expensesReport, setExpensesReport] = useState<ExpensesReport | null>(null);
-  const [isExpensesLoading, setIsExpensesLoading] = useState(false);
-  const [expensesError, setExpensesError] = useState<string | null>(null);
-  const [yearlyExpenseSummaries, setYearlyExpenseSummaries] = useState<
-    MonthlyExpenseSummary[]
-  >([]);
-  const [yearlyExpenseCategories, setYearlyExpenseCategories] = useState<string[]>([]);
-  const [selectedYearlyExpenseCategory, setSelectedYearlyExpenseCategory] = useState<
-    string | null
-  >(null);
-  const [isYearlyExpensesLoading, setIsYearlyExpensesLoading] = useState(false);
-  const [yearlyExpensesError, setYearlyExpensesError] = useState<string | null>(null);
-  const [selectedExpenseMonth, setSelectedExpenseMonth] = useState(currentMonth);
-  const [selectedExpenseCategory, setSelectedExpenseCategory] = useState<string | null>(
-    null,
-  );
-  const [categoryExpensesReport, setCategoryExpensesReport] =
-    useState<ExpensesReport | null>(null);
-  const [isCategoryExpensesLoading, setIsCategoryExpensesLoading] = useState(false);
-  const [categoryExpensesError, setCategoryExpensesError] = useState<string | null>(null);
-  const statementYears = useMemo(() => getStatementYears(statements), [statements]);
-  const displayedStatements = useMemo(
-    () =>
-      statements.filter(
-        (statement) =>
-          getStatementYear(statement) === selectedYear &&
-          (selectedStatementMonth === 'all' ||
-            getStatementMonth(statement) === selectedStatementMonth),
-      ),
-    [selectedStatementMonth, selectedYear, statements],
-  );
-  const combinedStatements = useMemo(
-    () =>
-      displayedStatements.filter(
-        (statement) => statement.statementType !== 'credit_card_statement',
-      ),
-    [displayedStatements],
-  );
-  const creditCardStatements = useMemo(
-    () =>
-      displayedStatements.filter(
-        (statement) => statement.statementType === 'credit_card_statement',
-      ),
-    [displayedStatements],
-  );
-  const yearOptions = statementYears.length > 0 ? statementYears : [selectedYear];
-
+  const statementYears = getStatementYears(statements);
+  const yearOptions = statementYears.length ? statementYears : [selectedYear];
+  const displayedStatements = statements.filter((statement) => getStatementYear(statement) === selectedYear && (selectedStatementMonth === 'all' || getStatementMonth(statement) === selectedStatementMonth));
+  const combinedStatements = displayedStatements.filter((statement) => statement.statementType !== 'credit_card_statement');
+  const creditCardStatements = displayedStatements.filter((statement) => statement.statementType === 'credit_card_statement');
   useEffect(() => {
     function handlePopState() {
       setRoute(getRoute());
@@ -139,7 +70,7 @@ function App() {
   }
 
   useEffect(() => {
-    if (route !== '/' && route !== '/backup-statements') return;
+    if (route !== '/backup-statements') return;
     let isMounted = true;
 
     async function loadStatements() {
@@ -218,260 +149,15 @@ function App() {
     };
   }, [selectedStatement]);
 
-  useEffect(() => {
-    if (route !== '/' || combinedStatements.length === 0) {
-      return;
-    }
-
-    let isMounted = true;
-    const statementIds = combinedStatements.map((statement) => statement.id);
-
-    async function loadIncomeTransactions() {
-      setIsIncomeLoading(true);
-      setIncomeError(null);
-
-      try {
-        const statementTransactions = await Promise.all(
-          statementIds.map((statementId) => getStatementTransactions(statementId)),
-        );
-
-        if (isMounted) {
-          setIncomeTransactions(statementTransactions.flat());
-        }
-      } catch (caughtError) {
-        if (isMounted) {
-          setIncomeTransactions([]);
-          setIncomeError(
-            caughtError instanceof Error
-              ? caughtError.message
-              : 'Unable to load income.',
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setIsIncomeLoading(false);
-        }
-      }
-    }
-
-    loadIncomeTransactions();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [route, combinedStatements]);
-
-  useEffect(() => {
-    if (route !== '/') return;
-    let isMounted = true;
-
-    async function loadYearlyExpenses() {
-      setIsYearlyExpensesLoading(true);
-      setYearlyExpensesError(null);
-
-      try {
-        const monthlyReports = await Promise.all(
-          monthKeys.map((month) => getExpensesReport(selectedYear, month)),
-        );
-        const categories = [
-          ...new Set(
-            monthlyReports.flatMap((report) =>
-              report.transactions.map((expense) => formatCategory(expense.category)),
-            ),
-          ),
-        ].sort((a, b) => a.localeCompare(b));
-        const filteredReports =
-          selectedYearlyExpenseCategory === null
-            ? monthlyReports
-            : await Promise.all(
-                monthKeys.map((month) =>
-                  getExpensesReport(selectedYear, month, selectedYearlyExpenseCategory),
-                ),
-              );
-
-        if (isMounted) {
-          setYearlyExpenseCategories(categories);
-          setYearlyExpenseSummaries(
-            filteredReports.map((report, index) => ({
-              month: monthKeys[index],
-              total: report.summary.selectedTotal ?? 0,
-              count: report.transactions.length,
-              transactions: report.transactions,
-            })),
-          );
-        }
-      } catch (caughtError) {
-        if (isMounted) {
-          setYearlyExpenseSummaries([]);
-          setYearlyExpenseCategories([]);
-          setYearlyExpensesError(
-            caughtError instanceof Error
-              ? caughtError.message
-              : 'Unable to load yearly expenses.',
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setIsYearlyExpensesLoading(false);
-        }
-      }
-    }
-
-    loadYearlyExpenses();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [route, selectedYear, selectedYearlyExpenseCategory]);
-
-  useEffect(() => {
-    if (route !== '/') return;
-    let isMounted = true;
-
-    async function loadExpenses() {
-      setIsExpensesLoading(true);
-      setExpensesError(null);
-
-      try {
-        const nextExpensesReport = await getExpensesReport(
-          selectedYear,
-          selectedExpenseMonth,
-        );
-
-        if (isMounted) {
-          setExpensesReport(nextExpensesReport);
-        }
-      } catch (caughtError) {
-        if (isMounted) {
-          setExpensesReport(null);
-          setExpensesError(
-            caughtError instanceof Error
-              ? caughtError.message
-              : 'Unable to load expenses.',
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setIsExpensesLoading(false);
-        }
-      }
-    }
-
-    loadExpenses();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [route, selectedExpenseMonth, selectedYear]);
-
-  useEffect(() => {
-    if (!selectedExpenseCategory) {
-      return;
-    }
-
-    let isMounted = true;
-    const expenseCategory = selectedExpenseCategory;
-
-    async function loadCategoryExpenses() {
-      setIsCategoryExpensesLoading(true);
-      setCategoryExpensesError(null);
-
-      try {
-        const nextCategoryExpensesReport = await getExpensesReport(
-          selectedYear,
-          selectedExpenseMonth,
-          expenseCategory,
-        );
-
-        if (isMounted) {
-          setCategoryExpensesReport(nextCategoryExpensesReport);
-        }
-      } catch (caughtError) {
-        if (isMounted) {
-          setCategoryExpensesReport(null);
-          setCategoryExpensesError(
-            caughtError instanceof Error
-              ? caughtError.message
-              : 'Unable to load category expenses.',
-          );
-        }
-      } finally {
-        if (isMounted) {
-          setIsCategoryExpensesLoading(false);
-        }
-      }
-    }
-
-    loadCategoryExpenses();
-
-    return () => {
-      isMounted = false;
-    };
-  }, [selectedExpenseCategory, selectedExpenseMonth, selectedYear]);
-
   function handleSelectStatement(statement: Statement) {
-    if (statement.id === selectedStatement?.id) {
-      setSelectedStatement(null);
-      setTransactions([]);
-      setTransactionsError(null);
-      setIsTransactionsLoading(false);
-      return;
-    }
-
-    setSelectedStatement(statement);
+    setSelectedStatement((selected) => selected?.id === statement.id ? null : statement);
     setTransactions([]);
     setTransactionsError(null);
   }
-
-  function handleYearChange(nextYear: string) {
-    setSelectedYear(nextYear);
-    setSelectedStatementMonth('all');
-    setSelectedStatement(null);
-    setTransactions([]);
-    setTransactionsError(null);
-    setIsTransactionsLoading(false);
-    setSelectedIncomeMonth('all');
-    setIncomeTransactions([]);
-    setIncomeError(null);
-    setIsIncomeLoading(false);
-    setExpensesReport(null);
-    setExpensesError(null);
-    setIsExpensesLoading(false);
-    setYearlyExpenseSummaries([]);
-    setYearlyExpenseCategories([]);
-    setSelectedYearlyExpenseCategory(null);
-    setYearlyExpensesError(null);
-    setIsYearlyExpensesLoading(false);
-    setSelectedExpenseCategory(null);
-    setCategoryExpensesReport(null);
-    setCategoryExpensesError(null);
-    setIsCategoryExpensesLoading(false);
+  function handleYearChange(year: string) {
+    setSelectedYear(year); setSelectedStatementMonth('all'); setSelectedStatement(null); setTransactions([]); setTransactionsError(null);
   }
-
-  function handleExpenseMonthChange(nextMonth: string) {
-    setSelectedExpenseMonth(nextMonth);
-    setSelectedExpenseCategory(null);
-    setCategoryExpensesReport(null);
-    setCategoryExpensesError(null);
-    setIsCategoryExpensesLoading(false);
-  }
-
-  function handleExpenseCategoryChange(category: string | null) {
-    setSelectedExpenseCategory(category);
-    setCategoryExpensesReport(null);
-    setCategoryExpensesError(null);
-    setIsCategoryExpensesLoading(false);
-  }
-
-  function handleYearlyExpenseCategoryChange(category: string | null) {
-    setSelectedYearlyExpenseCategory(category);
-    setYearlyExpenseSummaries([]);
-    setYearlyExpensesError(null);
-    setIsYearlyExpensesLoading(false);
-  }
-
-  return (
-    <main className={`app-shell${(route === '/json-statements' || route === '/statements') ? ' json-statements-shell' : ''}`}>
+  return <main className={`app-shell${route === '/' ? ' overview-shell' : ''}${route === '/statements' || route === '/json-statements' ? ' json-statements-shell' : ''}`}>
       <header className="dashboard-header">
         <a className="site-title" href="/" onClick={(event) => {
           event.preventDefault();
@@ -510,86 +196,12 @@ function App() {
           >
             Reports
           </a>
-          <a href="/backup-statements" aria-current={route === '/backup-statements' ? 'page' : undefined}
-            onClick={(event) => { event.preventDefault(); navigate('/backup-statements'); }}>
-            Backup Statements
-          </a>
+
         </nav>
       </header>
 
-      {(route === '/' || route === '/backup-statements') && isLoading && (
-        <p className="status-message">Loading statements...</p>
-      )}
-
-      {(route === '/' || route === '/backup-statements') && error && !isLoading && (
-        <div className="status-message error-message" role="alert">
-          {error}
-        </div>
-      )}
-
-      {!isLoading && !error && route === '/' && (
-        <>
-          <div className="dashboard-toolbar" aria-label="Dashboard filters">
-            <div className="toolbar-metric">
-              <span className="toolbar-label">Statement year</span>
-              <strong>{selectedYear}</strong>
-            </div>
-            <div className="toolbar-metric">
-              <span className="toolbar-label">Statements</span>
-              <strong>{displayedStatements.length}</strong>
-            </div>
-            <label className="year-select">
-              <span>Year</span>
-              <select
-                value={selectedYear}
-                onChange={(event) => handleYearChange(event.target.value)}
-              >
-                {yearOptions.map((year) => (
-                  <option key={year} value={year}>
-                    {year}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <YearlyExpensesChart
-            summaries={yearlyExpenseSummaries}
-            isLoading={isYearlyExpensesLoading}
-            error={yearlyExpensesError}
-            selectedMonth={selectedExpenseMonth}
-            selectedYear={selectedYear}
-            categoryOptions={yearlyExpenseCategories}
-            selectedCategory={selectedYearlyExpenseCategory}
-            onMonthChange={handleExpenseMonthChange}
-            onCategoryChange={handleYearlyExpenseCategoryChange}
-          />
-
-          <MonthlyExpenses
-            report={expensesReport}
-            isLoading={isExpensesLoading}
-            error={expensesError}
-            selectedMonth={selectedExpenseMonth}
-            selectedYear={selectedYear}
-            onMonthChange={handleExpenseMonthChange}
-            selectedCategory={selectedExpenseCategory}
-            categoryReport={categoryExpensesReport}
-            isCategoryLoading={isCategoryExpensesLoading}
-            categoryError={categoryExpensesError}
-            onCategoryChange={handleExpenseCategoryChange}
-          />
-
-          <MonthlyIncome
-            transactions={incomeTransactions}
-            isLoading={isIncomeLoading}
-            error={incomeError}
-            selectedMonth={selectedIncomeMonth}
-            selectedYear={selectedYear}
-            onMonthChange={setSelectedIncomeMonth}
-          />
-        </>
-      )}
-
+      {route === '/backup-statements' && isLoading && <p className="status-message">Loading statements…</p>}
+      {route === '/backup-statements' && error && !isLoading && <p className="status-message error-message" role="alert">{error}</p>}
       {!isLoading && !error && route === '/backup-statements' && (
         <>
           <div className="page-heading">
@@ -670,11 +282,10 @@ function App() {
         </>
       )}
 
+      {route === '/' && <Suspense fallback={<p className="status-message" role="status">Loading latest transactions…</p>}><OverviewPage /></Suspense>}
       {route === '/statements' && <Suspense fallback={<p className="status-message" role="status">Loading statements…</p>}><VerifiedStatementsPage /></Suspense>}
       {route === '/json-statements' && <JsonStatements />}
       {route === '/reports' && <ReportsPage />}
-    </main>
-  );
+    </main>;
 }
-
 export default App;

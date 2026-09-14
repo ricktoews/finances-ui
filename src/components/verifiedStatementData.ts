@@ -88,3 +88,15 @@ export function categoryCounts(files: LoadedStatement[]) {
   }
   return [...counts].map(([name, totals]) => ({ name, ...totals })).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
 }
+
+export function categoryYearAverage(files: LoadedStatement[], year: string, category: string) {
+  const amounts: number[] = [];
+  for (let month = 1; month <= 12; month++) {
+    const prefix = `${year}-${String(month).padStart(2, '0')}`;
+    const matching = files.filter((file) => statementDate(file).slice(0, 7) === prefix);
+    const entry = categoryCounts(matching).find((item) => item.name === category);
+    if (!matching.length || matching.some((file) => file.error || !file.data) || entry?.missingAmounts) continue;
+    amounts.push(entry?.amountCents ?? 0);
+  }
+  return { months: amounts.length, cents: amounts.length ? amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length : null };
+}
