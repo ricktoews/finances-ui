@@ -4,14 +4,17 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { getCategories, getStatementPdfByFilename, getVerifiedStatementData, getVerifiedStatementFiles } from '../api/financesApi';
 import type { Category } from '../types/finance';
 import { ExtractedDepositStatement, ExtractedStatementSummary, ExtractedTransactions } from './JsonStatements';
-import { categoryCounts, record, statementDate, statementLabel, updateCategory } from './verifiedStatementData';
+import { categoryCounts, record, statementBillCents, statementDate, statementLabel, updateCategory } from './verifiedStatementData';
 import type { LoadedStatement } from './verifiedStatementData';
+import { HighlightedCategoryContext } from './HighlightedCategoryContext';
 
 const months = Array.from({ length: 12 }, (_, index) => ({
   value: String(index + 1).padStart(2, '0'),
   name: new Date(2026, index, 1).toLocaleString('en-US', { month: 'long' }),
 }));
 const colors = ['#60a5fa', '#34d399', '#fbbf24', '#f87171', '#a78bfa', '#22d3ee', '#fb923c', '#f472b6'];
+const currency = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+const percentage = new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 1 });
 
 export function VerifiedStatementsPage() {
   const [year, setYear] = useState(String(new Date().getFullYear()));
@@ -30,6 +33,8 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   const [attempt, setAttempt] = useState(0);
   const [month, setMonth] = useState('');
   const [selected, setSelected] = useState('');
+  const [categoryHighlight, setCategoryHighlight] = useState<{ fileName: string; category: string } | null>(null);
+  const [showPdf, setShowPdf] = useState(true);
   const [categories, setCategories] = useState<Category[]>([]);
   const [categoryError, setCategoryError] = useState<string | null>(null);
   const [categoryAttempt, setCategoryAttempt] = useState(0);
@@ -77,7 +82,11 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   const visible = files.filter((file) => statementDate(file).slice(0, 7) === `${year}-${month}`);
   const undated = files.filter((file) => !statementDate(file));
   const file = files.find((candidate) => candidate.fileName === selected);
-  const counts = categoryCounts(visible);
+  const chartFiles = file ? [file] : visible;
+  const counts = categoryCounts(chartFiles);
+  const highlightedCategory = file && categoryHighlight?.fileName === file.fileName && counts.some((entry) => entry.name === categoryHighlight.category)
+    ? categoryHighlight.category : null;
+  const billCents = statementBillCents(chartFiles);
   const total = counts.reduce((sum, category) => sum + category.value, 0);
   function retry() { setError(null); setLoading(true); setSelected(''); setAttempt((value) => value + 1); }
   function saved(transactionId: string, category: Category) {
@@ -91,6 +100,9 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
         {months.map((item) => <option key={item.value} value={item.value}>{item.name} ({files.filter((entry) => statementDate(entry).slice(0, 7) === `${year}-${item.value}`).length})</option>)}
       </select></label>
       <p>Files are grouped by statement closing month.</p>
+      <button type="button" className="statement-pdf-button" aria-expanded={showPdf} onClick={() => setShowPdf((current) => !current)}>
+        {showPdf ? 'Hide PDF' : 'Show PDF'}
+      </button>
     </div>
     {loading && <p className="status-message" role="status">Loading verified statements for {year}…</p>}
     {error && <div className="status-message error-message" role="alert">{error} <button onClick={retry}>Retry</button></div>}
@@ -107,16 +119,29 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
       </section>
     </div>}
     {file && categoryError && <p className="status-message error-message" role="alert">{categoryError} <button onClick={() => { setCategoryError(null); setCategoryAttempt((value) => value + 1); }}>Retry categories</button></p>}
-    {!loading && !error && (month || file) && <div className="json-statement-details verified-comparison">
-      {file ? <StatementComparison key={file.fileName} file={file} categories={categories} onSaved={saved} /> : <>
-        <section className="content-section"><div className="section-heading"><h2>Source PDF</h2></div><p className="panel-state">Select a JSON file above to view its source PDF.</p></section>
+    {!loading && !error && (month || file) && <div className={`json-statement-details verified-comparison${showPdf ? '' : ' verified-comparison-without-pdf'}`}>
+      {file ? <HighlightedCategoryContext.Provider value={highlightedCategory}><StatementComparison key={file.fileName} file={file} categories={categories} onSaved={saved} showPdf={showPdf} /></HighlightedCategoryContext.Provider> : <>
+        {showPdf && <section className="content-section"><div className="section-heading"><h2>Source PDF</h2></div><p className="panel-state">Select a JSON file above to view its source PDF.</p></section>}
         <section className="content-section"><div className="section-heading"><h2>Statement</h2></div><p className="panel-state">Select a JSON file above to view its formatted statement.</p></section>
       </>}
       <section className="content-section"><div className="section-heading"><h2>Transactions by category</h2><span>{total} total</span></div>
-        <p className="verified-chart-note">Transaction counts across this month’s statements, including their full billing periods.</p>
+        <p className="verified-chart-note">{file ? 'Transactions for the selected statement’s full billing cycle.' : 'Transactions across this month’s statements, including their full billing periods.'} The chart shows transaction counts. Amounts are net totals, including payments and credits.</p>
+        <p className="verified-chart-note">{billCents === null ? 'Bill percentages are unavailable without a positive credit card statement balance for every statement shown.' : `Bill percentages use ${file ? 'the statement’s new balance' : 'the combined new balances'} of ${currency.format(billCents / 100)}.`}</p>
         {total === 0 ? <p className="panel-state">No transactions available to chart.</p> : <div className="verified-category-chart">
           <div aria-label="Transaction count by category"><ResponsiveContainer width="100%" height={250}><PieChart><Pie data={counts} dataKey="value" nameKey="name" innerRadius={55} outerRadius={100} isAnimationActive={false}>{counts.map((entry, index) => <Cell key={entry.name} fill={colors[index % colors.length]} />)}</Pie><Tooltip /></PieChart></ResponsiveContainer></div>
-          <ul>{counts.map((entry, index) => <li key={entry.name}><span className="category-dot" style={{ background: colors[index % colors.length] }} /><span>{entry.name}</span><strong>{entry.value} ({Math.round(entry.value / total * 100)}%)</strong></li>)}</ul>
+          <p className="verified-chart-note">{file ? 'Select a category to highlight its transactions. Select it again to clear the highlights.' : 'Select a statement to highlight transactions by category.'}</p>
+          <ul>{counts.map((entry, index) => <li key={entry.name}>
+            <span className="category-dot" style={{ background: colors[index % colors.length] }} />
+            <button type="button" className="verified-category-highlight-button" disabled={!file} aria-pressed={highlightedCategory === entry.name}
+              onClick={() => { if (file) setCategoryHighlight(highlightedCategory === entry.name ? null : { fileName: file.fileName, category: entry.name }); }}>
+              {entry.name}
+            </button>
+            <span className="verified-category-totals">
+              <strong>{entry.value} ({percentage.format(entry.value / total)} of transactions)</strong>
+              <span>{currency.format(entry.amountCents / 100)}{entry.missingAmounts > 0 ? ' (incomplete)' : ''}</span>
+              <span>{billCents !== null && entry.missingAmounts === 0 ? `${percentage.format(entry.amountCents / billCents)} of bill` : 'Bill share unavailable'}</span>
+            </span>
+          </li>)}</ul>
         </div>}
       </section>
     </div>}
@@ -125,7 +150,7 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   </>;
 }
 
-function StatementComparison({ file, categories, onSaved }: { file: LoadedStatement; categories: Category[]; onSaved: (transactionId: string, category: Category) => void }) {
+function StatementComparison({ file, categories, onSaved, showPdf }: { file: LoadedStatement; categories: Category[]; onSaved: (transactionId: string, category: Category) => void; showPdf: boolean }) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -144,9 +169,9 @@ function StatementComparison({ file, categories, onSaved }: { file: LoadedStatem
     return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
   }, [file.fileName, file.data?.source_file, attempt]);
   return <>
-    <section className="content-section pdf-data-section"><div className="section-heading"><h2>Source PDF</h2></div>
+    {showPdf && <section className="content-section pdf-data-section"><div className="section-heading"><h2>Source PDF</h2></div>
       {pdfError ? <p className="panel-state error-message" role="alert">{pdfError} <button onClick={() => { setPdfError(null); setAttempt((value) => value + 1); }}>Retry PDF</button></p> : !pdfUrl ? <p className="panel-state" role="status">Loading PDF…</p> : <iframe className="statement-pdf" src={pdfUrl} title={`PDF for ${file.fileName}`} />}
-    </section>
+    </section>}
     <section className="content-section json-data-section" aria-label={statementLabel(file)}>
       <div className="json-derived-scroll verified-statement-scroll" tabIndex={0} role="region" aria-label={`${statementLabel(file)} statement content`}>
         {file.error && <p className="panel-state error-message" role="alert">{file.error}</p>}

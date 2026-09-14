@@ -501,16 +501,6 @@ function App() {
             Statements
           </a>
           <a
-            href="/json-statements"
-            aria-current={route === '/json-statements' ? 'page' : undefined}
-            onClick={(event) => {
-              event.preventDefault();
-              navigate('/json-statements');
-            }}
-          >
-            JSON Statements
-          </a>
-          <a
             href="/reports"
             aria-current={route === '/reports' ? 'page' : undefined}
             onClick={(event) => {

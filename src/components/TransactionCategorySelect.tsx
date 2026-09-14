@@ -1,4 +1,5 @@
-import { useId, useRef, useState } from 'react';
+import { useContext, useId, useRef, useState } from 'react';
+import { HighlightedCategoryContext } from './HighlightedCategoryContext';
 import { setTransactionCategory } from '../api/financesApi';
 import type { Category } from '../types/finance';
 
@@ -12,6 +13,8 @@ type Props = {
 };
 
 export function TransactionCategorySelect({ transactionId, description, categoryId, categoryName, categories, onSaved }: Props) {
+  const highlightedCategory = useContext(HighlightedCategoryContext);
+  const isHighlighted = highlightedCategory !== null && highlightedCategory === (categoryName.trim() || 'Uncategorized');
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState<string | null>(null);
   const saving = useRef(false);
@@ -42,7 +45,8 @@ export function TransactionCategorySelect({ transactionId, description, category
   }
 
   return (
-    <div className="transaction-category-control">
+    <div className="transaction-category-control" data-category-highlighted={isHighlighted || undefined}>
+      {isHighlighted && <span className="category-highlight-label">Matching category</span>}
       <button
         type="button"
         className="transaction-category-button"

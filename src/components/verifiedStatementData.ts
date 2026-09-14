@@ -45,8 +45,29 @@ export function updateCategory(data: StatementDocument, transactionId: string, c
   };
 }
 
+function moneyCents(value: unknown): number | null {
+  const normalized = typeof value === 'string' ? value.trim().replace(/[$,]/g, '').replace(/^\((.*)\)$/, '-$1') : value;
+  if (normalized === '' || (typeof normalized !== 'number' && typeof normalized !== 'string')) return null;
+  const amount = Number(normalized);
+  return Number.isFinite(amount) ? Math.round(amount * 100) : null;
+}
+
+export function statementBillCents(files: LoadedStatement[]): number | null {
+  if (!files.length) return null;
+  let total = 0;
+  for (const file of files) {
+    const data = file.data ?? {};
+    if (Array.isArray(data.accounts) || /deposit|checking|savings/i.test(String(data.statement_type ?? data.account_type ?? file.statementType))) return null;
+    const summary = record(data.summary);
+    const balance = moneyCents(summary.new_balance_total ?? summary.newBalanceTotal);
+    if (balance === null) return null;
+    total += balance;
+  }
+  return total > 0 ? total : null;
+}
+
 export function categoryCounts(files: LoadedStatement[]) {
-  const counts = new Map<string, number>();
+  const counts = new Map<string, { value: number; amountCents: number; missingAmounts: number }>();
   const seen = new Set<string>();
   for (const file of files) {
     for (const transaction of statementTransactions(file.data ?? {})) {
@@ -57,8 +78,13 @@ export function categoryCounts(files: LoadedStatement[]) {
       }
       const category = typeof transaction.category === 'string' && transaction.category.trim()
         ? transaction.category.trim() : 'Uncategorized';
-      counts.set(category, (counts.get(category) ?? 0) + 1);
+      const entry = counts.get(category) ?? { value: 0, amountCents: 0, missingAmounts: 0 };
+      const amount = moneyCents(transaction.amount);
+      entry.value += 1;
+      entry.amountCents += amount ?? 0;
+      entry.missingAmounts += amount === null ? 1 : 0;
+      counts.set(category, entry);
     }
   }
-  return [...counts].map(([name, value]) => ({ name, value })).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+  return [...counts].map(([name, totals]) => ({ name, ...totals })).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
 }

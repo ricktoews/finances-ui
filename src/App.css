@@ -1671,7 +1671,13 @@ tbody tr:last-child td {
 }
 
 .dashboard-header nav { flex-wrap: wrap; }
-.verified-month-toolbar { grid-template-columns: auto auto 1fr; }
+.verified-month-toolbar { grid-template-columns: auto auto 1fr auto; }
+.verified-month-toolbar .statement-pdf-button {
+  width: auto;
+  padding: 0 12px;
+  font: inherit;
+  white-space: nowrap;
+}
 .verified-month-toolbar p, .verified-chart-note { color: var(--muted); font-size: 0.85rem; }
 .verified-month-overview { display: grid; grid-template-columns: minmax(0, 1fr); gap: 24px; }
 .verified-file-list { display: flex; flex-wrap: wrap; gap: 12px; list-style: none; padding: 0; margin: 0; }
@@ -1701,8 +1707,19 @@ tbody tr:last-child td {
   min-width: 0;
 }
 
+.json-statement-details.verified-comparison-without-pdf {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .verified-comparison .verified-category-chart {
   grid-template-columns: minmax(0, 1fr);
+}
+
+.verified-category-totals {
+  display: grid;
+  gap: 3px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
 }
 
 @media (max-width: 900px) {
@@ -1738,6 +1755,51 @@ tbody tr:last-child td {
 .verified-statement-scroll:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
+}
+
+@media (min-width: 901px) {
+  .verified-comparison .json-data-section {
+    height: auto;
+    align-self: start;
+  }
+
+  .verified-statement-scroll {
+    flex: none;
+    overflow: visible;
+  }
+}
+
+.verified-category-highlight-button {
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.verified-category-highlight-button:disabled { cursor: default; }
+.verified-category-highlight-button:hover:not(:disabled),
+.verified-category-highlight-button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--accent) 20%, var(--surface));
+  border-color: var(--accent);
+}
+.verified-category-highlight-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.verified-statement-scroll tr:has([data-category-highlighted="true"]) > td {
+  background: color-mix(in srgb, var(--accent) 22%, var(--surface-raised));
+  border-top: 1px solid var(--accent);
+  border-bottom: 1px solid var(--accent);
+}
+.category-highlight-label {
+  color: var(--text-h);
+  font-size: 0.7rem;
+  font-weight: 700;
 }
 
 .verified-statement-scroll .combined-account-summary {
