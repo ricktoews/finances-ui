@@ -163,6 +163,11 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
               <span>{entry.value} ({percentage.format(entry.value / total)} of transactions)</span>
             </span>
             {highlightedCategory === entry.name && <div className="verified-category-months">
+              <h3>{entry.name} breakdown</h3>
+              <dl>{entry.children.map((child) => <div key={child.name}>
+                <dt>{child.ungrouped ? 'Other / ungrouped' : child.name}</dt>
+                <dd>{currency.format(child.amountCents / 100)}{child.missingAmounts ? ' (incomplete)' : ''} · {child.value} {child.value === 1 ? 'transaction' : 'transactions'}</dd>
+              </div>)}</dl>
               <CategoryYearAverages year={year} category={entry.name} currentFiles={files} />
               <div className="verified-category-months-heading">
                 <h3>{entry.name} · {year}</h3>

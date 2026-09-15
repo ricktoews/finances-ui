@@ -39,7 +39,7 @@ export function updateCategory(data: StatementDocument, transactionId: string, c
     ...(Array.isArray(data.transactions) ? { transactions: data.transactions.map((value) => {
       const transaction = record(value);
       return (transaction.transaction_id ?? transaction.transactionId) === transactionId
-        ? { ...transaction, category_id: category.id, category: category.name } : value;
+        ? { ...transaction, category_id: category.id, category: category.name, parent_category: null } : value;
     }) } : {}),
     ...(Array.isArray(data.accounts) ? { accounts: data.accounts.map((account) => updateCategory(record(account), transactionId, category)) } : {}),
   };
@@ -66,8 +66,11 @@ export function statementBillCents(files: LoadedStatement[]): number | null {
   return total > 0 ? total : null;
 }
 
+type CategoryTotals = { value: number; amountCents: number; missingAmounts: number };
+const emptyTotals = (): CategoryTotals => ({ value: 0, amountCents: 0, missingAmounts: 0 });
+
 export function categoryCounts(files: LoadedStatement[]) {
-  const counts = new Map<string, { value: number; amountCents: number; missingAmounts: number }>();
+  const counts = new Map<string, CategoryTotals & { children: Map<string, CategoryTotals> }>();
   const seen = new Set<string>();
   for (const file of files) {
     for (const transaction of statementTransactions(file.data ?? {})) {
@@ -78,15 +81,27 @@ export function categoryCounts(files: LoadedStatement[]) {
       }
       const category = typeof transaction.category === 'string' && transaction.category.trim()
         ? transaction.category.trim() : 'Uncategorized';
-      const entry = counts.get(category) ?? { value: 0, amountCents: 0, missingAmounts: 0 };
+      const parent = typeof transaction.parent_category === 'string' && transaction.parent_category.trim()
+        ? transaction.parent_category.trim() : category;
+      const entry = counts.get(parent) ?? { ...emptyTotals(), children: new Map<string, CategoryTotals>() };
+      const child = entry.children.get(category) ?? emptyTotals();
       const amount = moneyCents(transaction.amount);
       entry.value += 1;
       entry.amountCents += amount ?? 0;
       entry.missingAmounts += amount === null ? 1 : 0;
-      counts.set(category, entry);
+      child.value += 1;
+      child.amountCents += amount ?? 0;
+      child.missingAmounts += amount === null ? 1 : 0;
+      entry.children.set(category, child);
+      counts.set(parent, entry);
     }
   }
-  return [...counts].map(([name, totals]) => ({ name, ...totals })).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
+  return [...counts].map(([name, { children, ...totals }]) => ({
+    name, ...totals,
+    children: [...children].map(([childName, childTotals]) => ({
+      name: childName, ...childTotals, ungrouped: childName === name,
+    })).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name)),
+  })).sort((a, b) => b.value - a.value || a.name.localeCompare(b.name));
 }
 
 export function categoryYearAverage(files: LoadedStatement[], year: string, category: string) {

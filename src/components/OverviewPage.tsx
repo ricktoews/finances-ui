@@ -1,4 +1,5 @@
 import { useEffect, useId, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { getVerifiedStatementData, getVerifiedStatementFiles } from '../api/financesApi';
 import { categoryCounts, record, statementDate, statementLabel, statementTransactions } from './verifiedStatementData';
@@ -22,7 +23,7 @@ function sourceLabel(file: LoadedStatement) {
   return bank && !label.toLowerCase().includes(institution.toLowerCase()) ? `${bank} · ${label}` : label;
 }
 
-export function OverviewPage() {
+export function OverviewPage({ navigationActions }: { navigationActions: HTMLElement | null }) {
   const hatchId = useId().replace(/[^a-zA-Z0-9_-]/g, '') + '-uncategorized';
   const [files, setFiles] = useState<LoadedStatement[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,11 +87,30 @@ export function OverviewPage() {
   const percent = new Intl.NumberFormat('en-US', { style: 'percent', maximumFractionDigits: 1 });
   const seen = new Set<string>();
   const transactions = monthFiles.flatMap((file) => statementTransactions(file.data ?? {}).flatMap((row, index) => {
-    const id = String(row.transaction_id ?? row.transactionId ?? `${file.fileName}:${index}`);
-    if (seen.has(id)) return [];
-    seen.add(id);
-    return [{ id, date: String(row.transaction_date ?? row.transactionDate ?? row.date ?? ''), description: String(row.description ?? 'Transaction'), category: typeof row.category === 'string' && row.category.trim() ? row.category.trim() : 'Uncategorized', amount: row.amount, source: sourceLabel(file) }];
+    const transactionId = row.transaction_id ?? row.transactionId;
+    if (typeof transactionId === 'string' && transactionId) {
+      if (seen.has(transactionId)) return [];
+      seen.add(transactionId);
+    }
+    const id = `${file.fileName}:${index}`;
+    const category = typeof row.category === 'string' && row.category.trim() ? row.category.trim() : 'Uncategorized';
+    const parentCategory = typeof row.parent_category === 'string' && row.parent_category.trim() ? row.parent_category.trim() : category;
+    return [{ id, date: String(row.transaction_date ?? row.transactionDate ?? row.date ?? ''), description: String(row.description ?? 'Transaction'), category, parentCategory, amount: row.amount, source: sourceLabel(file) }];
   })).sort((a, b) => b.date.localeCompare(a.date));
+  function downloadStatements() {
+    const statements = monthFiles.filter((file) => file.data && !file.error)
+      .map((file) => ({ fileName: file.fileName, data: file.data }));
+    if (!statements.length) return;
+    const blob = new Blob([JSON.stringify({ month, statements }, null, 2) + '\n'], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `statements-${month}.json`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  }
   function retry() { setError(null); setLoading(true); setAttempt((value) => value + 1); }
 
   if (loading) return <p className="status-message" role="status">Loading the latest month’s transactions…</p>;
@@ -98,6 +118,11 @@ export function OverviewPage() {
   if (!month) return <div className="status-message"><p>No dated verified statements are available.</p>{files.length > 0 && <button onClick={retry}>Retry loading statements</button>}</div>;
 
   return <div className="overview-month">
+    {navigationActions && createPortal(<button type="button" className="overview-download-button"
+      disabled={!monthFiles.some((file) => file.data && !file.error)}
+      onClick={downloadStatements} title={`Download statement JSON for ${monthLabel(month)}`}>
+      Download
+    </button>, navigationActions)}
     <header className="overview-month-heading">
       <div><p>Latest activity{month !== months[0] ? ' · Earlier month' : ''}</p><h1>{monthLabel(month)}</h1></div>
       <label><span>Statement month</span><select value={month} onChange={(event) => { setSelectedMonth(event.target.value); setExpanded(null); }}>{months.map((value) => <option key={value} value={value}>{monthLabel(value)}</option>)}</select></label>
@@ -123,12 +148,27 @@ export function OverviewPage() {
             <span aria-hidden="true">{expanded === category.name ? '−' : '+'}</span>
           </button>
           <div id={`overview-category-${index}`} hidden={expanded !== category.name}>
-            {expanded === category.name && <ul className="overview-transaction-list">{transactions.filter((transaction) => transaction.category === category.name).map((transaction) => <li key={transaction.id}>
-              <div><span className="overview-transaction-date">{transaction.date || 'Date unavailable'} · {transaction.source}</span><p>{transaction.description}</p></div><strong>{formatAmount(transaction.amount)}</strong>
-            </li>)}</ul>}
+            {expanded === category.name && (category.children.some((child) => !child.ungrouped)
+              ? <div className="overview-subcategory-list">{category.children.map((child) => <details key={`${month}:${child.name}`} className="overview-subcategory">
+                <summary>
+                  <span className="overview-category-name"><strong>{child.ungrouped ? 'Other / ungrouped' : child.name}</strong><small>{child.value} {child.value === 1 ? 'transaction' : 'transactions'}</small></span>
+                  <span className="overview-category-amount"><strong>{money.format(child.amountCents / 100)}</strong>{child.missingAmounts > 0 && <small>Incomplete</small>}</span>
+                </summary>
+                <OverviewTransactions transactions={transactions.filter((transaction) => transaction.parentCategory === category.name && transaction.category === child.name)} />
+              </details>)}</div>
+              : <OverviewTransactions transactions={transactions.filter((transaction) => transaction.parentCategory === category.name)} />)}
           </div>
         </li>)}</ul>}
       </div>
     </section>
   </div>;
+}
+
+
+type OverviewTransaction = { id: string; date: string; source: string; description: string; amount: unknown };
+
+function OverviewTransactions({ transactions }: { transactions: OverviewTransaction[] }) {
+  return <ul className="overview-transaction-list">{transactions.map((transaction) => <li key={transaction.id}>
+    <div><span className="overview-transaction-date">{transaction.date || 'Date unavailable'} · {transaction.source}</span><p>{transaction.description}</p></div><strong>{formatAmount(transaction.amount)}</strong>
+  </li>)}</ul>;
 }

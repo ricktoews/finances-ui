@@ -8,13 +8,16 @@ type Props = {
   description: string;
   categoryId: unknown;
   categoryName: string;
+  parentCategory?: unknown;
   categories: Category[];
   onSaved: (transactionId: string, category: Category) => void;
 };
 
-export function TransactionCategorySelect({ transactionId, description, categoryId, categoryName, categories, onSaved }: Props) {
+export function TransactionCategorySelect({ transactionId, description, categoryId, categoryName, parentCategory, categories, onSaved }: Props) {
   const highlightedCategory = useContext(HighlightedCategoryContext);
-  const isHighlighted = highlightedCategory !== null && highlightedCategory === (categoryName.trim() || 'Uncategorized');
+  const groupName = typeof parentCategory === 'string' && parentCategory.trim()
+    ? parentCategory.trim() : categoryName.trim() || 'Uncategorized';
+  const isHighlighted = highlightedCategory !== null && highlightedCategory === groupName;
   const [status, setStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
   const [error, setError] = useState<string | null>(null);
   const saving = useRef(false);

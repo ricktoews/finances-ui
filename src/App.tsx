@@ -39,6 +39,7 @@ function getStatementYears(statements: Statement[]): string[] {
 
 function App() {
   const [route, setRoute] = useState(getRoute);
+  const [overviewActions, setOverviewActions] = useState<HTMLSpanElement | null>(null);
   const [statements, setStatements] = useState<Statement[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -197,6 +198,7 @@ function App() {
             Reports
           </a>
 
+          {route === '/' && <span className="overview-nav-actions" ref={setOverviewActions} />}
         </nav>
       </header>
 
@@ -282,7 +284,7 @@ function App() {
         </>
       )}
 
-      {route === '/' && <Suspense fallback={<p className="status-message" role="status">Loading latest transactions…</p>}><OverviewPage /></Suspense>}
+      {route === '/' && <Suspense fallback={<p className="status-message" role="status">Loading latest transactions…</p>}><OverviewPage navigationActions={overviewActions} /></Suspense>}
       {route === '/statements' && <Suspense fallback={<p className="status-message" role="status">Loading statements…</p>}><VerifiedStatementsPage /></Suspense>}
       {route === '/json-statements' && <JsonStatements />}
       {route === '/reports' && <ReportsPage />}

@@ -8,6 +8,7 @@ import {
   getVerifiedStatementFiles,
 } from '../api/financesApi';
 import type { Category, Statement, VerifiedStatementFile } from '../types/finance';
+import { updateCategory } from './verifiedStatementData';
 import { TransactionCategorySelect } from './TransactionCategorySelect';
 
 const defaultYear = '2026';
@@ -150,7 +151,7 @@ function CapitalOneTransactions({ root, transactions, summary, categories, onCat
         <td>{date(getField(row, 'posting_date', 'postingDate'))}</td>
         <td className="transaction-description">{String(getField(row, 'description') ?? '—')}
           <TransactionCategorySelect transactionId={id} description={String(getField(row, 'description') ?? '')}
-            categoryId={getField(row, 'category_id', 'categoryId')} categoryName={String(getField(row, 'category') ?? '')}
+            parentCategory={getField(row, 'parent_category')} categoryId={getField(row, 'category_id', 'categoryId')} categoryName={String(getField(row, 'category') ?? '')}
             categories={categories} onSaved={onCategorySaved} />
         </td>
         <td className="transaction-amount">{formatMoney(getField(row, 'amount'))}</td>
@@ -239,7 +240,7 @@ function PrimeVisaActivity({ root, transactions, categories, onCategorySaved }: 
             <td>{formatTransactionDate(getField(transaction, 'transaction_date', 'transactionDate', 'date'))}</td>
             <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}
               <TransactionCategorySelect transactionId={id} description={String(getField(transaction, 'description') ?? '')}
-                categoryId={getField(transaction, 'category_id', 'categoryId')} categoryName={String(getField(transaction, 'category') ?? '')}
+                parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')} categoryName={String(getField(transaction, 'category') ?? '')}
                 categories={categories} onSaved={onCategorySaved} />
             </td>
             <td className="transaction-amount">{formatMoney(getField(transaction, 'amount'))}</td>
@@ -314,7 +315,7 @@ function AmexTransactions({ transactions, summary, categories, onCategorySaved }
                 <td>{formatStatementDate(date)}{posting ? '*' : ''}</td>
                 <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}
                   <TransactionCategorySelect transactionId={id} description={String(getField(transaction, 'description') ?? '')}
-                    categoryId={getField(transaction, 'category_id', 'categoryId')} categoryName={String(getField(transaction, 'category') ?? '')}
+                    parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')} categoryName={String(getField(transaction, 'category') ?? '')}
                     categories={categories} onSaved={onCategorySaved} />
                 </td>
                 <td className="transaction-amount">{formatMoney(getField(transaction, 'amount'))}</td>
@@ -484,7 +485,7 @@ export function ExtractedTransactions({ data, onCategorySaved }: {
                         key={String(transactionId ?? index)}
                         transactionId={typeof transactionId === 'string' ? transactionId : ''}
                         description={String(getField(transaction, 'description') ?? '')}
-                        categoryId={getField(transaction, 'category_id', 'categoryId')}
+                        parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')}
                         categoryName={typeof category === 'string' ? category : ''}
                         categories={categories}
                         onSaved={onCategorySaved}
@@ -645,7 +646,7 @@ function DepositAccount({
                     {onCategorySaved && <TransactionCategorySelect
                       transactionId={String(getField(transaction, 'transaction_id', 'transactionId') ?? '')}
                       description={String(getField(transaction, 'description') ?? '')}
-                      categoryId={getField(transaction, 'category_id', 'categoryId')}
+                      parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')}
                       categoryName={String(getField(transaction, 'category') ?? '')}
                       categories={categories} onSaved={onCategorySaved}
                     />}</td>
@@ -1180,13 +1181,7 @@ export function JsonStatements() {
                   <ExtractedTransactions data={statementData} onCategorySaved={(transactionId, category) => {
                     setStatementData((current: unknown) => {
                       const root = asRecord(current);
-                      if (!root || !Array.isArray(root.transactions)) return current;
-                      return { ...root, transactions: root.transactions.map((value: unknown) => {
-                        const transaction = asRecord(value);
-                        return getField(transaction, 'transaction_id', 'transactionId') === transactionId
-                          ? { ...transaction, category_id: category.id, category: category.name }
-                          : value;
-                      }) };
+                      return root ? updateCategory(root, transactionId, category) : current;
                     });
                   }} />
                   <ExtractedDepositStatement data={statementData} />
