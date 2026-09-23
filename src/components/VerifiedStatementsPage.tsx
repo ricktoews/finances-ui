@@ -5,7 +5,7 @@ import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
 import { getCategories, getStatementPdfByFilename, getVerifiedStatementData, getVerifiedStatementFiles } from '../api/financesApi';
 import type { Category } from '../types/finance';
 import { ExtractedDepositStatement, ExtractedStatementSummary, ExtractedTransactions } from './JsonStatements';
-import { categoryCounts, record, statementBillCents, statementDate, statementLabel, updateCategory } from './verifiedStatementData';
+import { categoryCounts, record, statementBillCents, statementDate, statementLabel, statementTransactions } from './verifiedStatementData';
 import type { LoadedStatement } from './verifiedStatementData';
 import { HighlightedCategoryContext } from './HighlightedCategoryContext';
 
@@ -97,7 +97,7 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
       ...item,
       amountCents: category?.amountCents ?? 0,
       hasData: monthFiles.some((entry) => entry.data),
-      incomplete: monthFiles.some((entry) => entry.error || !entry.data) || Boolean(category?.missingAmounts),
+      incomplete: monthFiles.some((entry) => entry.error || !entry.data || record(entry.data.import_status).fully_imported === false) || Boolean(category?.missingAmounts),
     };
   }) : [];
   const completeMonthlyAmounts = monthlyCategoryTotals
@@ -108,9 +108,13 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   const billCents = statementBillCents(chartFiles);
   const total = counts.reduce((sum, category) => sum + category.value, 0);
   function retry() { setError(null); setLoading(true); setSelected(''); setAttempt((value) => value + 1); }
-  function saved(transactionId: string, category: Category) {
-    setFiles((current) => current.map((item) => item.data ? { ...item, data: updateCategory(item.data, transactionId, category) } : item));
+  async function saved(transactionId: string) {
+    const refreshed = await Promise.all(files.filter((item) => item.data && (item.fileName === selected || statementTransactions(item.data).some((row) => (row.transaction_id ?? row.transactionId) === transactionId))).map(async (item) => ({
+      ...item, data: record(await getVerifiedStatementData(year, item.fileName)),
+    })));
+    setFiles((current) => current.map((item) => refreshed.find((next) => next.fileName === item.fileName) ?? item));
   }
+
   return <>
     <div className="dashboard-toolbar verified-month-toolbar">
       {yearControl}
@@ -126,7 +130,7 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
     {loading && <p className="status-message" role="status">Loading verified statements for {year}…</p>}
     {error && <div className="status-message error-message" role="alert">{error} <button onClick={retry}>Retry</button></div>}
     {!loading && !error && files.length === 0 && <p className="status-message">No verified statements found for {year}.</p>}
-    {!loading && !error && files.some((entry) => entry.error) && <div className="status-message error-message" role="alert">Some statement files could not be loaded. Category counts may be incomplete. <button onClick={retry}>Retry files</button></div>}
+    {!loading && !error && files.some((entry) => entry.error) && <div className="status-message error-message" role="alert">Some statement files could not be loaded. Category counts may be incomplete. {[...new Set(files.flatMap((entry) => entry.error ? [entry.error] : []))].join(' ')} <button onClick={retry}>Retry files</button></div>}
     {!loading && !error && month && <div className="verified-month-overview">
       <section aria-label="JSON files">
         {visible.length === 0 ? <p className="panel-state">No statements close in this month.</p> : <ul className="verified-file-list">{visible.map((entry) => <li key={entry.fileName}>
@@ -138,6 +142,7 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
       </section>
     </div>}
     {file && categoryError && <p className="status-message error-message" role="alert">{categoryError} <button onClick={() => { setCategoryError(null); setCategoryAttempt((value) => value + 1); }}>Retry categories</button></p>}
+    {chartFiles.some((entry) => record(entry.data?.import_status).fully_imported === false) && <p className="status-message" role="status">Some statement data is awaiting import.</p>}
     {!loading && !error && (month || file) && <div className={`json-statement-details verified-comparison${showPdf ? '' : ' verified-comparison-without-pdf'}`}>
       {file ? <HighlightedCategoryContext.Provider value={highlightedCategory}><StatementComparison key={file.fileName} file={file} categories={categories} onSaved={saved} showPdf={showPdf} /></HighlightedCategoryContext.Provider> : <>
         {showPdf && <section className="content-section"><div className="section-heading"><h2>Source PDF</h2></div><p className="panel-state">Select a JSON file above to view its source PDF.</p></section>}
@@ -190,7 +195,7 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   </>;
 }
 
-function StatementComparison({ file, categories, onSaved, showPdf }: { file: LoadedStatement; categories: Category[]; onSaved: (transactionId: string, category: Category) => void; showPdf: boolean }) {
+function StatementComparison({ file, categories, onSaved, showPdf }: { file: LoadedStatement; categories: Category[]; onSaved: (transactionId: string) => Promise<void>; showPdf: boolean }) {
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
   const [pdfError, setPdfError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);

@@ -1,5 +1,6 @@
 import { Fragment, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import {
+  canonicalTransactionId,
   getStatementPdf,
   getCategories,
   getStatementPdfByFilename,
@@ -8,7 +9,7 @@ import {
   getVerifiedStatementFiles,
 } from '../api/financesApi';
 import type { Category, Statement, VerifiedStatementFile } from '../types/finance';
-import { updateCategory } from './verifiedStatementData';
+import { ImportStatusNotice } from './ImportStatusNotice';
 import { TransactionCategorySelect } from './TransactionCategorySelect';
 
 const defaultYear = '2026';
@@ -46,7 +47,8 @@ function asRecord(value: unknown): JsonRecord | null {
 
 function getField(record: JsonRecord | null, ...names: string[]): unknown {
   if (!record) return undefined;
-  return names.map((name) => record[name]).find((value) => value !== undefined && value !== null);
+  const preservesNull = ['transaction_id', 'category_id', 'category', 'merchant_id', 'merchant', 'parent_category_id', 'parent_category'].includes(names[0]);
+  return names.map((name) => record[name]).find((value) => value !== undefined && (preservesNull || value !== null));
 }
 
 function formatMoney(value: unknown): string {
@@ -120,7 +122,7 @@ function CapitalOneTransactions({ root, transactions, summary, categories, onCat
   transactions: JsonRecord[];
   summary: JsonRecord | null;
   categories: Category[];
-  onCategorySaved: (transactionId: string, category: Category) => void;
+  onCategorySaved: (transactionId: string) => Promise<void>;
 }) {
   const type = (row: JsonRecord) => String(getField(row, 'type') ?? '').toLowerCase();
   const payments = transactions.filter((row) => ['payment', 'credit', 'adjustment'].includes(type(row)));
@@ -145,13 +147,13 @@ function CapitalOneTransactions({ root, transactions, summary, categories, onCat
     <colgroup><col style={{ width: '16%' }} /><col style={{ width: '16%' }} /><col /><col style={{ width: '24%' }} /></colgroup>
     <thead><tr><th scope="col">Trans Date</th><th scope="col">Post Date</th><th scope="col">Description</th><th scope="col">Amount</th></tr></thead>
     <tbody>{rows.map((row, index) => {
-      const id = String(getField(row, 'transaction_id', 'transactionId') ?? '');
+      const id = canonicalTransactionId(getField(row, 'transaction_id', 'transactionId'));
       return <tr key={id || index}>
         <td>{date(getField(row, 'transaction_date', 'transactionDate', 'date'))}</td>
         <td>{date(getField(row, 'posting_date', 'postingDate'))}</td>
         <td className="transaction-description">{String(getField(row, 'description') ?? '—')}
           <TransactionCategorySelect transactionId={id} description={String(getField(row, 'description') ?? '')}
-            parentCategory={getField(row, 'parent_category')} categoryId={getField(row, 'category_id', 'categoryId')} categoryName={String(getField(row, 'category') ?? '')}
+            numericId={getField(row, 'id')} merchant={getField(row, 'merchant')} parentCategory={getField(row, 'parent_category')} categoryId={getField(row, 'category_id', 'categoryId')} categoryName={String(getField(row, 'category') ?? '')}
             categories={categories} onSaved={onCategorySaved} />
         </td>
         <td className="transaction-amount">{formatMoney(getField(row, 'amount'))}</td>
@@ -205,7 +207,7 @@ function PrimeVisaActivity({ root, transactions, categories, onCategorySaved }: 
   root: JsonRecord | null;
   transactions: JsonRecord[];
   categories: Category[];
-  onCategorySaved: (transactionId: string, category: Category) => void;
+  onCategorySaved: (transactionId: string) => Promise<void>;
 }) {
   const summary = asRecord(getField(root, 'summary'));
   const yearToDate = asRecord(getField(root, 'year_to_date', 'yearToDate'));
@@ -235,12 +237,12 @@ function PrimeVisaActivity({ root, transactions, categories, onCategorySaved }: 
       <tbody>{[...groups].map(([label, rows]) => <Fragment key={label}>
         <tr className="prime-activity-group"><th scope="rowgroup" colSpan={3}>{label}</th></tr>
         {rows.map((transaction, index) => {
-          const id = String(getField(transaction, 'transaction_id', 'transactionId') ?? '');
+          const id = canonicalTransactionId(getField(transaction, 'transaction_id', 'transactionId'));
           return <tr key={id || index}>
             <td>{formatTransactionDate(getField(transaction, 'transaction_date', 'transactionDate', 'date'))}</td>
             <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}
               <TransactionCategorySelect transactionId={id} description={String(getField(transaction, 'description') ?? '')}
-                parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')} categoryName={String(getField(transaction, 'category') ?? '')}
+                numericId={getField(transaction, 'id')} merchant={getField(transaction, 'merchant')} parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')} categoryName={String(getField(transaction, 'category') ?? '')}
                 categories={categories} onSaved={onCategorySaved} />
             </td>
             <td className="transaction-amount">{formatMoney(getField(transaction, 'amount'))}</td>
@@ -265,7 +267,7 @@ function AmexTransactions({ transactions, summary, categories, onCategorySaved }
   transactions: JsonRecord[];
   summary: JsonRecord | null;
   categories: Category[];
-  onCategorySaved: (transactionId: string, category: Category) => void;
+  onCategorySaved: (transactionId: string) => Promise<void>;
 }) {
   const type = (transaction: JsonRecord) => String(getField(transaction, 'type') ?? '').toLowerCase();
   const payments = transactions.filter((row) => type(row) === 'payment');
@@ -308,14 +310,14 @@ function AmexTransactions({ transactions, summary, categories, onCategorySaved }
             <colgroup><col style={{ width: '20%' }} /><col /><col style={{ width: '24%' }} /></colgroup>
             <thead><tr><th colSpan={2} scope="colgroup">{detail.label || 'Detail'}</th><th scope="col">Amount</th></tr></thead>
             <tbody>{detail.rows.map((transaction, index) => {
-              const id = String(getField(transaction, 'transaction_id', 'transactionId') ?? '');
+              const id = canonicalTransactionId(getField(transaction, 'transaction_id', 'transactionId'));
               const posting = group.title === 'Payments and Credits' ? getField(transaction, 'posting_date', 'postingDate') : undefined;
               const date = posting ?? getField(transaction, 'transaction_date', 'transactionDate', 'date');
               return <tr key={id || index}>
                 <td>{formatStatementDate(date)}{posting ? '*' : ''}</td>
                 <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}
                   <TransactionCategorySelect transactionId={id} description={String(getField(transaction, 'description') ?? '')}
-                    parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')} categoryName={String(getField(transaction, 'category') ?? '')}
+                    numericId={getField(transaction, 'id')} merchant={getField(transaction, 'merchant')} parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')} categoryName={String(getField(transaction, 'category') ?? '')}
                     categories={categories} onSaved={onCategorySaved} />
                 </td>
                 <td className="transaction-amount">{formatMoney(getField(transaction, 'amount'))}</td>
@@ -331,7 +333,7 @@ function AmexTransactions({ transactions, summary, categories, onCategorySaved }
 
 export function ExtractedTransactions({ data, onCategorySaved }: {
   data: unknown;
-  onCategorySaved: (transactionId: string, category: Category) => void;
+  onCategorySaved: (transactionId: string) => Promise<void>;
 }) {
   const sectionRef = useRef<HTMLDivElement>(null);
   const headingRef = useRef<HTMLDivElement>(null);
@@ -470,7 +472,7 @@ export function ExtractedTransactions({ data, onCategorySaved }: {
                 : null;
 
               return (
-                <Fragment key={`${String(reference ?? '')}-${index}`}>
+                <Fragment key={canonicalTransactionId(transactionId) || `${String(reference ?? '')}-${index}`}>
                   {section !== previousSection && (
                     <tr className="transaction-section-row">
                       <td colSpan={2} />
@@ -483,9 +485,9 @@ export function ExtractedTransactions({ data, onCategorySaved }: {
                     <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}
                       <TransactionCategorySelect
                         key={String(transactionId ?? index)}
-                        transactionId={typeof transactionId === 'string' ? transactionId : ''}
+                        transactionId={canonicalTransactionId(transactionId)}
                         description={String(getField(transaction, 'description') ?? '')}
-                        parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')}
+                        numericId={getField(transaction, 'id')} merchant={getField(transaction, 'merchant')} parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')}
                         categoryName={typeof category === 'string' ? category : ''}
                         categories={categories}
                         onSaved={onCategorySaved}
@@ -543,7 +545,7 @@ function DepositAccount({
   periodEnd,
 }: {
   categories: Category[];
-  onCategorySaved?: (transactionId: string, category: Category) => void;
+  onCategorySaved?: (transactionId: string) => Promise<void>;
   account: JsonRecord;
   index: number;
   periodStart: unknown;
@@ -640,13 +642,13 @@ function DepositAccount({
               </thead>
               <tbody>
                 {group.transactions.map((transaction, transactionIndex) => (
-                  <tr key={`${String(getField(transaction, 'transaction_date', 'transactionDate', 'date') ?? '')}-${transactionIndex}`}>
+                  <tr key={canonicalTransactionId(getField(transaction, 'transaction_id', 'transactionId')) || `${String(getField(transaction, 'transaction_date', 'transactionDate', 'date') ?? '')}-${transactionIndex}`}>
                     <td>{formatTransactionDate(getField(transaction, 'transaction_date', 'transactionDate', 'date'))}</td>
                     <td className="transaction-description">{String(getField(transaction, 'description') ?? '—')}
                     {onCategorySaved && <TransactionCategorySelect
-                      transactionId={String(getField(transaction, 'transaction_id', 'transactionId') ?? '')}
+                      transactionId={canonicalTransactionId(getField(transaction, 'transaction_id', 'transactionId'))}
                       description={String(getField(transaction, 'description') ?? '')}
-                      parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')}
+                      numericId={getField(transaction, 'id')} merchant={getField(transaction, 'merchant')} parentCategory={getField(transaction, 'parent_category')} categoryId={getField(transaction, 'category_id', 'categoryId')}
                       categoryName={String(getField(transaction, 'category') ?? '')}
                       categories={categories} onSaved={onCategorySaved}
                     />}</td>
@@ -669,7 +671,7 @@ function DepositAccount({
 export function ExtractedDepositStatement({ data, categories = [], onCategorySaved }: {
   data: unknown;
   categories?: Category[];
-  onCategorySaved?: (transactionId: string, category: Category) => void;
+  onCategorySaved?: (transactionId: string) => Promise<void>;
 }) {
   const root = asRecord(data);
   const accounts = Array.isArray(root?.accounts)
@@ -1178,11 +1180,12 @@ export function JsonStatements() {
               {statementData !== null && (
                 <>
                   <ExtractedStatementSummary data={statementData} />
-                  <ExtractedTransactions data={statementData} onCategorySaved={(transactionId, category) => {
-                    setStatementData((current: unknown) => {
-                      const root = asRecord(current);
-                      return root ? updateCategory(root, transactionId, category) : current;
-                    });
+                  <ImportStatusNotice data={statementData} />
+                  <ExtractedTransactions data={statementData} onCategorySaved={async () => {
+                    if (!selectedFile) return;
+                    const request = selectionRequest.current;
+                    const refreshed = await getVerifiedStatementData(year, selectedFile);
+                    if (request === selectionRequest.current && !request?.signal.aborted) setStatementData(refreshed);
                   }} />
                   <ExtractedDepositStatement data={statementData} />
                   <div className="raw-json-heading">

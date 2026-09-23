@@ -1,8 +1,11 @@
 import { useEffect, useId, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
-import { getVerifiedStatementData, getVerifiedStatementFiles } from '../api/financesApi';
-import { categoryCounts, record, statementDate, statementLabel, statementTransactions } from './verifiedStatementData';
+import type { ReactNode } from 'react';
+import type { Statement } from '../types/finance';
+import { loadOverviewMonth, overviewMonths } from './overviewData';
+import { canonicalTransactionId, getStatements } from '../api/financesApi';
+import { categoryCounts, statementDate, statementLabel, statementTransactions } from './verifiedStatementData';
 import type { LoadedStatement } from './verifiedStatementData';
 
 const money = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
@@ -24,39 +27,45 @@ function sourceLabel(file: LoadedStatement) {
 }
 
 export function OverviewPage({ navigationActions }: { navigationActions: HTMLElement | null }) {
+  const [statements, setStatements] = useState<Statement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const [selectedMonth, setSelectedMonth] = useState('');
+  useEffect(() => {
+    const controller = new AbortController();
+    getStatements(controller.signal).then((result) => {
+      if (!controller.signal.aborted) setStatements(result);
+    }).catch((caught: unknown) => {
+      if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'Unable to load statements.');
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [attempt]);
+  const months = overviewMonths(statements);
+  const month = months.includes(selectedMonth) ? selectedMonth : months[0] ?? '';
+  if (loading) return <p className="status-message" role="status">Loading statements…</p>;
+  if (error) return <p className="status-message error-message" role="alert">{error} <button onClick={() => { setError(null); setLoading(true); setAttempt((value) => value + 1); }}>Retry</button></p>;
+  if (!month) return <p className="status-message">No dated statements are available.</p>;
+  const heading = <header className="overview-month-heading">
+    <div><p>Latest activity{month !== months[0] ? ' · Earlier month' : ''}</p><h1>{monthLabel(month)}</h1></div>
+    <label><span>Statement month</span><select value={month} onChange={(event) => setSelectedMonth(event.target.value)}>{months.map((value) => <option key={value} value={value}>{monthLabel(value)}</option>)}</select></label>
+  </header>;
+  return <OverviewMonth key={month} statements={statements} month={month} heading={heading} navigationActions={navigationActions} />;
+}
+
+function OverviewMonth({ statements, month, heading, navigationActions }: { statements: Statement[]; month: string; heading: ReactNode; navigationActions: HTMLElement | null }) {
   const hatchId = useId().replace(/[^a-zA-Z0-9_-]/g, '') + '-uncategorized';
   const [files, setFiles] = useState<LoadedStatement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
-  const [selectedMonth, setSelectedMonth] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
       try {
-        for (let year = new Date().getFullYear(); year >= 2000; year--) {
-          const listing = await getVerifiedStatementFiles(String(year), controller.signal);
-          if (controller.signal.aborted) return;
-          if (!listing.length) continue;
-          const loaded: LoadedStatement[] = [];
-          let index = 0;
-          await Promise.all(Array.from({ length: Math.min(4, listing.length) }, async () => {
-            while (index < listing.length && !controller.signal.aborted) {
-              const file = listing[index++];
-              try {
-                const data = record(await getVerifiedStatementData(String(year), file.fileName, controller.signal));
-                if (!Object.keys(data).length) throw new Error('Invalid statement');
-                loaded.push({ ...file, data });
-              } catch {
-                loaded.push({ ...file, error: 'Unable to load statement' });
-              }
-            }
-          }));
-          if (controller.signal.aborted) return;
-          setFiles(loaded);
-          return;
-        }
+        const loaded = await loadOverviewMonth(statements, month, controller.signal);
+        if (!controller.signal.aborted) setFiles(loaded);
       } catch (caught) {
         if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'Unable to load transactions.');
       } finally {
@@ -65,11 +74,9 @@ export function OverviewPage({ navigationActions }: { navigationActions: HTMLEle
     }
     void load();
     return () => controller.abort();
-  }, [attempt]);
+  }, [attempt, statements, month]);
 
-  const months = [...new Set(files.map((file) => statementDate(file).slice(0, 7)).filter(Boolean))].sort().reverse();
-  const month = months.includes(selectedMonth) ? selectedMonth : months[0] ?? '';
-  const monthFiles = files.filter((file) => statementDate(file).slice(0, 7) === month);
+  const monthFiles = files;
   const counts = categoryCounts(monthFiles);
 
   counts.sort((a, b) =>
@@ -92,10 +99,10 @@ export function OverviewPage({ navigationActions }: { navigationActions: HTMLEle
       if (seen.has(transactionId)) return [];
       seen.add(transactionId);
     }
-    const id = `${file.fileName}:${index}`;
+    const id = canonicalTransactionId(transactionId) || `${file.fileName}:${index}`;
     const category = typeof row.category === 'string' && row.category.trim() ? row.category.trim() : 'Uncategorized';
     const parentCategory = typeof row.parent_category === 'string' && row.parent_category.trim() ? row.parent_category.trim() : category;
-    return [{ id, date: String(row.transaction_date ?? row.transactionDate ?? row.date ?? ''), description: String(row.description ?? 'Transaction'), category, parentCategory, amount: row.amount, source: sourceLabel(file) }];
+    return [{ id, date: String(row.transaction_date ?? row.transactionDate ?? row.date ?? ''), description: String(row.description ?? 'Transaction'), category, parentCategory, merchant: typeof row.merchant === 'string' ? row.merchant : null, amount: row.amount, source: sourceLabel(file) }];
   })).sort((a, b) => b.date.localeCompare(a.date));
   function downloadStatements() {
     const statements = monthFiles.filter((file) => file.data && !file.error)
@@ -113,9 +120,9 @@ export function OverviewPage({ navigationActions }: { navigationActions: HTMLEle
   }
   function retry() { setError(null); setLoading(true); setAttempt((value) => value + 1); }
 
-  if (loading) return <p className="status-message" role="status">Loading the latest month’s transactions…</p>;
+  if (loading) return <>{heading}<p className="status-message" role="status">Loading transactions for {monthLabel(month)}…</p></>;
   if (error) return <div className="status-message error-message" role="alert">{error} <button onClick={retry}>Retry</button></div>;
-  if (!month) return <div className="status-message"><p>No dated verified statements are available.</p>{files.length > 0 && <button onClick={retry}>Retry loading statements</button>}</div>;
+
 
   return <div className="overview-month">
     {navigationActions && createPortal(<button type="button" className="overview-download-button"
@@ -123,11 +130,8 @@ export function OverviewPage({ navigationActions }: { navigationActions: HTMLEle
       onClick={downloadStatements} title={`Download statement JSON for ${monthLabel(month)}`}>
       Download
     </button>, navigationActions)}
-    <header className="overview-month-heading">
-      <div><p>Latest activity{month !== months[0] ? ' · Earlier month' : ''}</p><h1>{monthLabel(month)}</h1></div>
-      <label><span>Statement month</span><select value={month} onChange={(event) => { setSelectedMonth(event.target.value); setExpanded(null); }}>{months.map((value) => <option key={value} value={value}>{monthLabel(value)}</option>)}</select></label>
-    </header>
-    {files.some((file) => file.error || !statementDate(file)) && <div className="status-message error-message" role="alert">Some files could not be loaded or dated. This month’s totals may be incomplete. <button onClick={retry}>Retry</button></div>}
+    {heading}
+    {files.some((file) => file.error || !statementDate(file)) && <div className="status-message error-message" role="alert">Some statements could not be loaded or dated. This month’s totals may be incomplete. {[...new Set(files.flatMap((file) => file.error ? [file.error] : []))].join(' ')} <button onClick={retry}>Retry</button></div>}
     <section className="overview-category-panel" aria-labelledby="overview-category-heading">
       <div className="overview-category-intro"><div><h2 id="overview-category-heading">Transactions by category</h2><p>{total} transactions · {monthFiles.length} statements</p></div></div>
       <div className="overview-statement-sources"><span>Statements included</span><ul>{monthFiles.filter((entry) => entry.data && !entry.error).map((entry) => <li key={entry.fileName}>{sourceLabel(entry)} <small>· {statementDate(entry)}</small></li>)}</ul></div>
@@ -140,7 +144,7 @@ export function OverviewPage({ navigationActions }: { navigationActions: HTMLEle
           {!chartHasAmounts && total > 0 && <p className="panel-state">No nonzero category totals to chart.</p>}
           <p className="overview-chart-note">Wedges show the absolute size of each category’s net dollar total, excluding credit card payments. Credit card payments remain in the list. Tooltips and list amounts retain their signs; list percentages show each category’s share of the chart total. Based on statements closing in {monthLabel(month)}, including their full billing periods.</p>
         </div>
-        {total === 0 ? <p className="panel-state">No transactions in this month’s statements.</p> : <ul className="overview-category-list">{counts.map((category, index) => <li key={category.name}>
+        {total === 0 ? <p className="panel-state">No imported transactions were returned for this month’s statements.</p> : <ul className="overview-category-list">{counts.map((category, index) => <li key={category.name}>
           <button className="overview-category-toggle" aria-expanded={expanded === category.name} aria-controls={`overview-category-${index}`} onClick={() => setExpanded((value) => value === category.name ? null : category.name)}>
             <span className="category-dot" style={{ background: category.name === 'Uncategorized' ? 'repeating-linear-gradient(135deg, #6b7280 0 3px, #d1d5db 3px 5px, #6b7280 5px 7px)' : colors[index % colors.length] }} />
             <span className="overview-category-name"><strong>{category.name}</strong><small>{category.value} transactions</small></span>
@@ -165,10 +169,10 @@ export function OverviewPage({ navigationActions }: { navigationActions: HTMLEle
 }
 
 
-type OverviewTransaction = { id: string; date: string; source: string; description: string; amount: unknown };
+type OverviewTransaction = { id: string; date: string; source: string; description: string; amount: unknown; merchant?: string | null };
 
 function OverviewTransactions({ transactions }: { transactions: OverviewTransaction[] }) {
   return <ul className="overview-transaction-list">{transactions.map((transaction) => <li key={transaction.id}>
-    <div><span className="overview-transaction-date">{transaction.date || 'Date unavailable'} · {transaction.source}</span><p>{transaction.description}</p></div><strong>{formatAmount(transaction.amount)}</strong>
+    <div><span className="overview-transaction-date">{transaction.date || 'Date unavailable'} · {transaction.source}</span><p>{transaction.description}</p>{transaction.merchant && <small>Merchant: {transaction.merchant}</small>}</div><strong>{formatAmount(transaction.amount)}</strong>
   </li>)}</ul>;
 }

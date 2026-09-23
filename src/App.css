@@ -2168,3 +2168,5 @@ tbody tr:last-child td {
 @media (max-width: 900px) {
   .overview-shell .dashboard-header nav { width: 100%; }
 }
+
+.transaction-enrichment { display: block; color: var(--muted); margin-top: 4px; }

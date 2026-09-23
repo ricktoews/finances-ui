@@ -40,6 +40,13 @@ export type VerifiedStatementFile = {
 };
 
 export type RawTransaction = {
+  transaction_id?: string | null;
+  merchant_id?: number | null;
+  merchant?: string | null;
+  category_id?: number | null;
+  parent_category_id?: number | null;
+  parent_category?: string | null;
+
   id?: string | number;
   transaction_date?: string;
   transactionDate?: string;
@@ -53,15 +60,23 @@ export type RawTransaction = {
 };
 
 export type Transaction = {
+  transaction_id?: string | null;
+  merchant_id?: number | null;
+  merchant?: string | null;
+  category_id?: number | null;
+  parent_category_id?: number | null;
+  parent_category?: string | null;
+  numericId?: number | null;
   id: string;
   transactionDate: string;
   accountName: string;
   description: string;
-  category: string;
+  category: string | null;
   amount: number | null;
 };
 
 export type ReportTransaction = Transaction & {
+  category: string;
   sourceFile: string;
   reportLabel: string;
 };
@@ -72,6 +87,7 @@ export type ReportTransactions = {
 };
 
 export type RawExpense = {
+  transaction_id?: string | null;
   id?: string | number;
   transaction_date?: string;
   transactionDate?: string;

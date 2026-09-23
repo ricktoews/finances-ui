@@ -54,8 +54,8 @@ function formatCurrency(value: number): string {
   return usdFormatter.format(value);
 }
 
-function formatText(value: string): string {
-  return value.trim() ? value : '—';
+function formatText(value: string | null): string {
+  return value?.trim() ? value : '—';
 }
 
 function getIncomeTransactions(transactions: Transaction[], year: string) {

@@ -15,8 +15,31 @@ import type {
 
 const API_BASE_URL = 'https://finances.toews-api.com';
 
+async function apiFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const response = await fetch(input, init);
+  if (response.status === 503) throw new Error('Database or statement evidence is temporarily unavailable. Please try again.');
+  return response;
+}
+
+export function canonicalTransactionId(value: unknown): string {
+  return typeof value === 'string' && value.trim() && !/^\d+$/.test(value) ? value : '';
+}
+
+export async function resetTransactionCategory(numericId: number): Promise<void> {
+  if (!Number.isSafeInteger(numericId) || numericId <= 0) throw new Error('A numeric transaction ID is required to reset a category.');
+  const response = await apiFetch(`${API_BASE_URL}/transactions/${numericId}/category`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ category_id: null }),
+  });
+  if (response.status === 409) throw new Error('This transaction has no canonical ID. Its category cannot be reset yet.');
+  if (!response.ok) throw new Error(`Unable to reset category (${response.status}). Please try again.`);
+  const result = await response.json();
+  if (result.success === false) throw new Error('Unable to reset category. The server did not apply the change.');
+}
+
+
 export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
-  const response = await fetch(`${API_BASE_URL}/categories`, { signal });
+  const response = await apiFetch(`${API_BASE_URL}/categories`, { signal });
   if (!response.ok) throw new Error(`Unable to load categories (${response.status})`);
   const data: unknown = await response.json();
   if (!Array.isArray(data) || !data.every((item) =>
@@ -26,7 +49,9 @@ export async function getCategories(signal?: AbortSignal): Promise<Category[]> {
 }
 
 export async function setTransactionCategory(transactionId: string, categoryId: number): Promise<void> {
-  const response = await fetch(`${API_BASE_URL}/transaction-categories`, {
+  if (!canonicalTransactionId(transactionId)) throw new Error('A canonical transaction ID is required.');
+  if (!Number.isSafeInteger(categoryId) || categoryId <= 0) throw new Error('A category ID is required.');
+  const response = await apiFetch(`${API_BASE_URL}/transaction-categories`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ transaction_id: transactionId, category_id: categoryId }),
@@ -35,7 +60,7 @@ export async function setTransactionCategory(transactionId: string, categoryId: 
 }
 
 export async function getReports(signal?: AbortSignal): Promise<AvailableReport[]> {
-  const response = await fetch(`${API_BASE_URL}/reports`, { signal });
+  const response = await apiFetch(`${API_BASE_URL}/reports`, { signal });
 
   if (!response.ok) {
     throw new Error(`Unable to load reports (${response.status})`);
@@ -57,7 +82,7 @@ export async function getReportTransactions(
   reportId: string,
   signal?: AbortSignal,
 ): Promise<ReportTransactions> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/reports/${encodeURIComponent(reportId)}/transactions`,
     { signal },
   );
@@ -83,8 +108,9 @@ export async function getReportTransactions(
         category: transaction.report_category,
         account_name: transaction.financial_institution,
       }, index),
+      category: transaction.report_category ?? '',
       sourceFile: transaction.source_json ?? '',
-      reportLabel: transaction.report_label?.trim() ?? '',
+      reportLabel: transaction.report_label ?? '',
     })),
   };
 }
@@ -93,7 +119,7 @@ export async function getStatementPdf(
   statementId: string,
   signal?: AbortSignal,
 ): Promise<Blob> {
-  const response = await fetch(getStatementPdfUrl(statementId), { signal });
+  const response = await apiFetch(getStatementPdfUrl(statementId), { signal });
 
   if (!response.ok) {
     throw new Error(`Unable to load statement PDF (${response.status})`);
@@ -106,7 +132,7 @@ export async function getStatementPdfByFilename(
   filename: string,
   signal?: AbortSignal,
 ): Promise<Blob> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/statements/by-filename/${encodeURIComponent(filename)}/pdf`,
     { signal },
   );
@@ -182,11 +208,18 @@ function normalizeTransaction(transaction: RawTransaction, index: number): Trans
   const description = transaction.description ?? transaction.name ?? '';
 
   return {
-    id: String(transaction.id ?? `${transactionDate}-${description}-${index}`),
+    id: canonicalTransactionId(transaction.transaction_id) || String(transaction.id ?? `${transactionDate}-${description}-${index}`),
+    transaction_id: canonicalTransactionId(transaction.transaction_id) || null,
+    numericId: typeof transaction.id === 'number' ? transaction.id : null,
+    merchant_id: transaction.merchant_id ?? null,
+    merchant: transaction.merchant ?? null,
+    category_id: transaction.category_id ?? null,
+    parent_category_id: transaction.parent_category_id ?? null,
+    parent_category: transaction.parent_category ?? null,
     transactionDate,
     accountName: transaction.account_name ?? transaction.accountName ?? '',
     description,
-    category: transaction.category ?? '',
+    category: transaction.category ?? null,
     amount: toNumber(transaction.amount),
   };
 }
@@ -197,7 +230,7 @@ function normalizeExpense(expense: RawExpense, index: number): Expense {
   const description = expense.description ?? '';
 
   return {
-    id: String(expense.id ?? `${transactionDate}-${description}-${index}`),
+    id: canonicalTransactionId(expense.transaction_id) || String(expense.id ?? `${transactionDate}-${description}-${index}`),
     transactionDate,
     month: expense.month ?? transactionDate.slice(0, 7),
     accountName: expense.account_name ?? expense.accountName ?? '',
@@ -230,8 +263,8 @@ function normalizeExpenseSummary(summary: RawExpenseSummary = {}): ExpensesRepor
   };
 }
 
-export async function getStatements(): Promise<Statement[]> {
-  const response = await fetch(`${API_BASE_URL}/statements`);
+export async function getStatements(signal?: AbortSignal): Promise<Statement[]> {
+  const response = await apiFetch(`${API_BASE_URL}/statements`, { signal });
 
   if (response.status === 404) {
     return [];
@@ -257,7 +290,7 @@ export async function getVerifiedStatementFiles(
   year: string,
   signal?: AbortSignal,
 ): Promise<VerifiedStatementFile[]> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/verified-statements/${encodeURIComponent(year)}/files`,
     { signal },
   );
@@ -313,7 +346,7 @@ export async function getVerifiedStatementData(
   fileName: string,
   signal?: AbortSignal,
 ): Promise<unknown> {
-  const response = await fetch(
+  const response = await apiFetch(
     `${API_BASE_URL}/verified-statements/${encodeURIComponent(year)}/files/${encodeURIComponent(fileName)}`,
     { signal },
   );
@@ -325,9 +358,10 @@ export async function getVerifiedStatementData(
   return response.json();
 }
 
-export async function getStatementTransactions(statementId: string): Promise<Transaction[]> {
-  const response = await fetch(
+export async function getStatementTransactions(statementId: string, signal?: AbortSignal): Promise<Transaction[]> {
+  const response = await apiFetch(
     `${API_BASE_URL}/statements/${encodeURIComponent(statementId)}/transactions`,
+    { signal },
   );
 
   if (!response.ok) {
@@ -366,7 +400,7 @@ export async function getExpensesReport(
     params.set('category', category);
   }
 
-  const response = await fetch(`${API_BASE_URL}/reports/expenses?${params}`, { signal });
+  const response = await apiFetch(`${API_BASE_URL}/reports/expenses?${params}`, { signal });
 
   if (!response.ok) {
     throw new Error(`Unable to load expenses (${response.status})`);

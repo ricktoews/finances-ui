@@ -177,7 +177,7 @@ export function TransactionsPanel({
                     {index + 1}
                   </td>
                   <td data-label="Date">{formatDate(transaction.transactionDate)}</td>
-                  <td data-label="Description">{formatText(transaction.description)}</td>
+                  <td data-label="Description">{formatText(transaction.description)}<small className="transaction-enrichment">{transaction.merchant || 'Merchant unavailable'} · {transaction.category || 'Uncategorized'}{transaction.parent_category ? ` · ${transaction.parent_category}` : ''}</small></td>
                   <td
                     data-label="Amount"
                     className={`numeric amount ${

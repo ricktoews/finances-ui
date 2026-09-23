@@ -1,4 +1,4 @@
-import type { Category, VerifiedStatementFile } from '../types/finance';
+import type { VerifiedStatementFile } from '../types/finance';
 
 export type StatementDocument = Record<string, unknown>;
 export type LoadedStatement = VerifiedStatementFile & { data?: StatementDocument; error?: string };
@@ -31,18 +31,6 @@ export function statementTransactions(data: StatementDocument): StatementDocumen
   const own = Array.isArray(data.transactions) ? data.transactions.map(record) : [];
   const accounts = Array.isArray(data.accounts) ? data.accounts.flatMap((account) => statementTransactions(record(account))) : [];
   return [...own, ...accounts];
-}
-
-export function updateCategory(data: StatementDocument, transactionId: string, category: Category): StatementDocument {
-  return {
-    ...data,
-    ...(Array.isArray(data.transactions) ? { transactions: data.transactions.map((value) => {
-      const transaction = record(value);
-      return (transaction.transaction_id ?? transaction.transactionId) === transactionId
-        ? { ...transaction, category_id: category.id, category: category.name, parent_category: null } : value;
-    }) } : {}),
-    ...(Array.isArray(data.accounts) ? { accounts: data.accounts.map((account) => updateCategory(record(account), transactionId, category)) } : {}),
-  };
 }
 
 function moneyCents(value: unknown): number | null {
@@ -110,7 +98,7 @@ export function categoryYearAverage(files: LoadedStatement[], year: string, cate
     const prefix = `${year}-${String(month).padStart(2, '0')}`;
     const matching = files.filter((file) => statementDate(file).slice(0, 7) === prefix);
     const entry = categoryCounts(matching).find((item) => item.name === category);
-    if (!matching.length || matching.some((file) => file.error || !file.data) || entry?.missingAmounts) continue;
+    if (!matching.length || matching.some((file) => file.error || !file.data || record(file.data.import_status).fully_imported === false) || entry?.missingAmounts) continue;
     amounts.push(entry?.amountCents ?? 0);
   }
   return { months: amounts.length, cents: amounts.length ? amounts.reduce((sum, amount) => sum + amount, 0) / amounts.length : null };
