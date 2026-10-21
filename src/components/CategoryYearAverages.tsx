@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { getVerifiedStatementData, getVerifiedStatementFiles } from '../api/financesApi';
-import { categoryYearAverage, record } from './verifiedStatementData';
+import { getStatements } from '../api/financesApi';
+import { categoryYearAverage } from './verifiedStatementData';
+import { loadRelationalStatements } from './overviewData';
 import type { LoadedStatement } from './verifiedStatementData';
 
 const cache = new Map<string, { files: LoadedStatement[]; time: number }>();
@@ -14,29 +15,19 @@ export function CategoryYearAverages({ year, category, currentFiles }: { year: s
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
-      const latest = Math.max(new Date().getFullYear(), Number(year));
-      // Search the same year range supported by the statement picker.
-      for (let value = latest; value >= 2000; value--) {
-        const target = String(value);
+      let listing;
+      try { listing = await getStatements(controller.signal); }
+      catch {
+        if (!controller.signal.aborted) { setErrors(['statement index']); setLoading(false); }
+        return;
+      }
+      const years = [...new Set(listing.map((statement) => statement.periodEnd.slice(0, 4)))].filter((value) => /^20\d{2}$/.test(value)).sort().reverse();
+      for (const target of years) {
         if (target === year || controller.signal.aborted) continue;
         try {
           let files = cache.get(target);
           if (!files || Date.now() - files.time > 300000) {
-            const listing = await getVerifiedStatementFiles(target, controller.signal);
-            const loaded: LoadedStatement[] = [];
-            let index = 0;
-            await Promise.all(Array.from({ length: Math.min(4, listing.length) }, async () => {
-              while (index < listing.length && !controller.signal.aborted) {
-                const file = listing[index++];
-                try {
-                  const data = record(await getVerifiedStatementData(target, file.fileName, controller.signal));
-                  if (!Object.keys(data).length) throw new Error('Invalid statement data');
-                  loaded.push({ ...file, data });
-                } catch {
-                  loaded.push({ ...file, error: 'Unable to load statement' });
-                }
-              }
-            }));
+            const loaded = await loadRelationalStatements(listing.filter((statement) => statement.periodEnd.slice(0, 4) === target), controller.signal);
             if (controller.signal.aborted) return;
             if (loaded.some((file) => file.error)) throw new Error('Incomplete year');
             files = { files: loaded, time: Date.now() };

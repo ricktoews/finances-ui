@@ -9,6 +9,10 @@ export function overviewMonths(statements: Statement[]): string[] {
 
 export async function loadOverviewMonth(statements: Statement[], month: string, signal: AbortSignal): Promise<LoadedStatement[]> {
   const matching = statements.filter((statement) => statement.periodEnd.slice(0, 7) === month);
+  return loadRelationalStatements(matching, signal);
+}
+
+export async function loadRelationalStatements(matching: Statement[], signal: AbortSignal): Promise<LoadedStatement[]> {
   const loaded: LoadedStatement[] = [];
   let index = 0;
   await Promise.all(Array.from({ length: Math.min(4, matching.length) }, async () => {
@@ -34,4 +38,12 @@ export async function loadOverviewMonth(statements: Statement[], month: string, 
     }
   }));
   return loaded.sort((a, b) => a.fileName.localeCompare(b.fileName));
+}
+
+export function pendingStatementTransactions(statements: Statement[], files: LoadedStatement[], month: string, comparisons: boolean): Statement[] {
+  return statements.filter((statement) => {
+    const entry = files.find((item) => item.fileName === (statement.sourceFile || statement.id));
+    const requested = comparisons || (Boolean(month) && statement.periodEnd.slice(0, 7) === month);
+    return requested && Boolean(entry) && !entry?.data && !entry?.error;
+  });
 }

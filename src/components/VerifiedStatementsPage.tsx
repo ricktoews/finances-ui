@@ -2,9 +2,10 @@ import { CategoryYearAverages } from './CategoryYearAverages';
 import { useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts';
-import { getCategories, getStatementPdfByFilename, getVerifiedStatementData, getVerifiedStatementFiles } from '../api/financesApi';
-import type { Category } from '../types/finance';
-import { ExtractedDepositStatement, ExtractedStatementSummary, ExtractedTransactions } from './JsonStatements';
+import { getCategories, getStatementPdf, getStatements, getStatementTransactions, canonicalTransactionId } from '../api/financesApi';
+import type { Category, Statement } from '../types/finance';
+import { loadRelationalStatements, pendingStatementTransactions } from './overviewData';
+import { TransactionCategorySelect } from './TransactionCategorySelect';
 import { categoryCounts, record, statementBillCents, statementDate, statementLabel, statementTransactions } from './verifiedStatementData';
 import type { LoadedStatement } from './verifiedStatementData';
 import { HighlightedCategoryContext } from './HighlightedCategoryContext';
@@ -28,6 +29,7 @@ export function VerifiedStatementsPage() {
 }
 
 function StatementYear({ year, yearControl }: { year: string; yearControl: ReactNode }) {
+  const [statements, setStatements] = useState<Statement[]>([]);
   const [files, setFiles] = useState<LoadedStatement[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -41,34 +43,23 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   const [categoryAttempt, setCategoryAttempt] = useState(0);
   useEffect(() => {
     const controller = new AbortController();
+    if (!selected) return;
     getCategories(controller.signal).then((result) => {
       if (!controller.signal.aborted) setCategories(result);
     }).catch((caught: unknown) => {
       if (!controller.signal.aborted) setCategoryError(caught instanceof Error ? caught.message : 'Unable to load categories.');
     });
     return () => controller.abort();
-  }, [categoryAttempt]);
+  }, [categoryAttempt, selected]);
   useEffect(() => {
     const controller = new AbortController();
     async function load() {
       try {
-        const listing = await getVerifiedStatementFiles(year);
+        const listing = await getStatements(controller.signal);
         if (controller.signal.aborted) return;
-        const results: LoadedStatement[] = [];
-        let index = 0;
-        // Limit requests while resolving dates missing from the listing.
-        await Promise.all(Array.from({ length: 4 }, async () => {
-          while (index < listing.length && !controller.signal.aborted) {
-            const file = listing[index++];
-            try {
-              const data = record(await getVerifiedStatementData(year, file.fileName, controller.signal));
-              if (!Object.keys(data).length) throw new Error('Statement data is empty or invalid.');
-              results.push({ ...file, data });
-            } catch (caught) {
-              results.push({ ...file, error: caught instanceof Error ? caught.message : 'Unable to load statement.' });
-            }
-          }
-        }));
+        const matching = listing.filter((statement) => statement.periodEnd.slice(0, 4) === year);
+        setStatements(matching);
+        const results = matching.map((statement) => ({ fileName: statement.sourceFile || statement.id, statementDate: statement.periodEnd, statementType: statement.statementType }));
         if (!controller.signal.aborted) setFiles(results.sort((a, b) => statementDate(b).localeCompare(statementDate(a)) || a.fileName.localeCompare(b.fileName)));
       } catch (caught) {
         if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'Unable to load statements.');
@@ -90,6 +81,20 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   const chartHasAmounts = chartCategories.some((entry) => entry.chartAmount > 0);
   const highlightedCategory = file && categoryHighlight?.fileName === file.fileName && counts.some((entry) => entry.name === categoryHighlight.category)
     ? categoryHighlight.category : null;
+  useEffect(() => {
+    if (loading || error) return;
+    const controller = new AbortController();
+    const pending = pendingStatementTransactions(statements, files, month ? `${year}-${month}` : '', Boolean(highlightedCategory));
+    if (!pending.length) return;
+    loadRelationalStatements(pending, controller.signal).then((results) => {
+      if (!controller.signal.aborted) setFiles((current) => current.map((item) => results.find((next) => next.fileName === item.fileName) ?? item));
+    }).catch((caught: unknown) => {
+      if (!controller.signal.aborted) setError(caught instanceof Error ? caught.message : 'Unable to load transactions.');
+    });
+    return () => controller.abort();
+  }, [statements, files, month, year, highlightedCategory, loading, error]);
+  const transactionsLoading = chartFiles.some((entry) => !entry.data && !entry.error);
+  const comparisonsLoading = Boolean(highlightedCategory) && files.some((entry) => !entry.data && !entry.error);
   const monthlyCategoryTotals = highlightedCategory ? months.map((item) => {
     const monthFiles = files.filter((entry) => statementDate(entry).slice(0, 7) === `${year}-${item.value}`);
     const category = categoryCounts(monthFiles).find((entry) => entry.name === highlightedCategory);
@@ -108,9 +113,10 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
   const billCents = statementBillCents(chartFiles);
   const total = counts.reduce((sum, category) => sum + category.value, 0);
   function retry() { setError(null); setLoading(true); setSelected(''); setAttempt((value) => value + 1); }
+  function retryTransactions() { setFiles((current) => current.map((item) => item.error ? { ...item, error: undefined } : item)); }
   async function saved(transactionId: string) {
     const refreshed = await Promise.all(files.filter((item) => item.data && (item.fileName === selected || statementTransactions(item.data).some((row) => (row.transaction_id ?? row.transactionId) === transactionId))).map(async (item) => ({
-      ...item, data: record(await getVerifiedStatementData(year, item.fileName)),
+      ...item, data: { ...item.data, transactions: (await getStatementTransactions(String(item.data?.statement_id))).map((transaction) => ({ ...transaction, id: transaction.numericId, transaction_date: transaction.transactionDate })) },
     })));
     setFiles((current) => current.map((item) => refreshed.find((next) => next.fileName === item.fileName) ?? item));
   }
@@ -122,17 +128,17 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
         <option value="">Choose a month…</option>
         {months.map((item) => <option key={item.value} value={item.value}>{item.name} ({files.filter((entry) => statementDate(entry).slice(0, 7) === `${year}-${item.value}`).length})</option>)}
       </select></label>
-      <p>Files are grouped by statement closing month.</p>
+      <p>Statements are grouped by statement closing month.</p>
       <button type="button" className="statement-pdf-button" aria-expanded={showPdf} onClick={() => setShowPdf((current) => !current)}>
         {showPdf ? 'Hide PDF' : 'Show PDF'}
       </button>
     </div>
-    {loading && <p className="status-message" role="status">Loading verified statements for {year}…</p>}
+    {loading && <p className="status-message" role="status">Loading statements for {year}…</p>}
     {error && <div className="status-message error-message" role="alert">{error} <button onClick={retry}>Retry</button></div>}
-    {!loading && !error && files.length === 0 && <p className="status-message">No verified statements found for {year}.</p>}
-    {!loading && !error && files.some((entry) => entry.error) && <div className="status-message error-message" role="alert">Some statement files could not be loaded. Category counts may be incomplete. {[...new Set(files.flatMap((entry) => entry.error ? [entry.error] : []))].join(' ')} <button onClick={retry}>Retry files</button></div>}
+    {!loading && !error && files.length === 0 && <p className="status-message">No statements found for {year}.</p>}
+    {!loading && !error && files.some((entry) => entry.error) && <div className="status-message error-message" role="alert">Some statement files could not be loaded. Category counts may be incomplete. {[...new Set(files.flatMap((entry) => entry.error ? [entry.error] : []))].join(' ')} <button onClick={retryTransactions}>Retry transactions</button></div>}
     {!loading && !error && month && <div className="verified-month-overview">
-      <section aria-label="JSON files">
+      <section aria-label="Statements">
         {visible.length === 0 ? <p className="panel-state">No statements close in this month.</p> : <ul className="verified-file-list">{visible.map((entry) => <li key={entry.fileName}>
           <button aria-pressed={selected === entry.fileName} onClick={() => setSelected(entry.fileName)}>
             <strong>{statementDate(entry)} · {String(entry.data?.financial_institution ?? entry.statementType).replaceAll('_', ' ')}</strong><span>{entry.fileName}</span>
@@ -145,13 +151,13 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
     {chartFiles.some((entry) => record(entry.data?.import_status).fully_imported === false) && <p className="status-message" role="status">Some statement data is awaiting import.</p>}
     {!loading && !error && (month || file) && <div className={`json-statement-details verified-comparison${showPdf ? '' : ' verified-comparison-without-pdf'}`}>
       {file ? <HighlightedCategoryContext.Provider value={highlightedCategory}><StatementComparison key={file.fileName} file={file} categories={categories} onSaved={saved} showPdf={showPdf} /></HighlightedCategoryContext.Provider> : <>
-        {showPdf && <section className="content-section"><div className="section-heading"><h2>Source PDF</h2></div><p className="panel-state">Select a JSON file above to view its source PDF.</p></section>}
-        <section className="content-section"><div className="section-heading"><h2>Statement</h2></div><p className="panel-state">Select a JSON file above to view its formatted statement.</p></section>
+        {showPdf && <section className="content-section"><div className="section-heading"><h2>Source PDF</h2></div><p className="panel-state">Select a statement above to view its source PDF.</p></section>}
+        <section className="content-section"><div className="section-heading"><h2>Statement</h2></div><p className="panel-state">Select a statement above to view its formatted statement.</p></section>
       </>}
-      <section className="content-section"><div className="section-heading"><h2>Transactions by category</h2><span>{total} total</span></div>
+      <section className="content-section"><div className="section-heading"><h2>Transactions by category</h2><span>{transactionsLoading ? 'Loading…' : `${total} total`}</span></div>
         <p className="verified-chart-note">{file ? 'Transactions for the selected statement’s full billing cycle.' : 'Transactions across this month’s statements, including their full billing periods.'} Wedges show the absolute size of each category’s net dollar total, excluding credit card payments. Credit card payments remain in the list. Tooltips and list amounts retain their signs.</p>
         <p className="verified-chart-note">{billCents === null ? 'Bill percentages are unavailable without a positive credit card statement balance for every statement shown.' : `Bill percentages use ${file ? 'the statement’s new balance' : 'the combined new balances'} of ${currency.format(billCents / 100)}.`}</p>
-        {total === 0 ? <p className="panel-state">No transactions available to chart.</p> : <div className="verified-category-chart">
+        {transactionsLoading ? <p className="panel-state" role="status">Loading this month’s transactions…</p> : total === 0 ? <p className="panel-state">No transactions available to chart.</p> : <div className="verified-category-chart">
           {chartHasAmounts ? <div aria-label="Net dollar amounts by category, shown as absolute sizes"><ResponsiveContainer width="100%" height={250}><PieChart><Pie data={chartCategories} dataKey="chartAmount" nameKey="name" innerRadius={55} outerRadius={100} isAnimationActive={false}>{chartCategories.map((entry) => <Cell key={entry.name} fill={colors[entry.colorIndex % colors.length]} />)}</Pie><Tooltip formatter={(_value, name) => {
             const category = counts.find((entry) => entry.name === name);
             return [category ? `${currency.format(category.amountCents / 100)}${category.missingAmounts ? ' (incomplete)' : ''}` : 'Amount unavailable', name];
@@ -173,6 +179,7 @@ function StatementYear({ year, yearControl }: { year: string; yearControl: React
                 <dt>{child.ungrouped ? 'Other / ungrouped' : child.name}</dt>
                 <dd>{currency.format(child.amountCents / 100)}{child.missingAmounts ? ' (incomplete)' : ''} · {child.value} {child.value === 1 ? 'transaction' : 'transactions'}</dd>
               </div>)}</dl>
+              {comparisonsLoading && <p role="status">Loading remaining months for comparisons…</p>}
               <CategoryYearAverages year={year} category={entry.name} currentFiles={files} />
               <div className="verified-category-months-heading">
                 <h3>{entry.name} · {year}</h3>
@@ -202,9 +209,8 @@ function StatementComparison({ file, categories, onSaved, showPdf }: { file: Loa
   useEffect(() => {
     const controller = new AbortController();
     let url: string | undefined;
-    const source = file.data?.source_file;
-    const name = typeof source === 'string' && /\.pdf$/i.test(source) ? source.split(/[\\/]/).pop()! : file.fileName.replace(/\.json$/i, '.pdf');
-    getStatementPdfByFilename(name, controller.signal).then((blob) => {
+    if (!showPdf || !file.data?.statement_id) return;
+    getStatementPdf(String(file.data?.statement_id), controller.signal).then((blob) => {
       if (controller.signal.aborted) return;
       url = URL.createObjectURL(blob);
       setPdfUrl(url);
@@ -212,15 +218,31 @@ function StatementComparison({ file, categories, onSaved, showPdf }: { file: Loa
       if (!controller.signal.aborted) setPdfError(caught instanceof Error ? caught.message : 'Unable to load PDF.');
     });
     return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
-  }, [file.fileName, file.data?.source_file, attempt]);
+  }, [file.data?.statement_id, showPdf, attempt]);
   return <>
     {showPdf && <section className="content-section pdf-data-section"><div className="section-heading"><h2>Source PDF</h2></div>
       {pdfError ? <p className="panel-state error-message" role="alert">{pdfError} <button onClick={() => { setPdfError(null); setAttempt((value) => value + 1); }}>Retry PDF</button></p> : !pdfUrl ? <p className="panel-state" role="status">Loading PDF…</p> : <iframe className="statement-pdf" src={pdfUrl} title={`PDF for ${file.fileName}`} />}
     </section>}
     <section className="content-section json-data-section" aria-label={statementLabel(file)}>
       <div className="json-derived-scroll verified-statement-scroll" tabIndex={0} role="region" aria-label={`${statementLabel(file)} statement content`}>
+        {!file.data && !file.error && <p className="panel-state" role="status">Loading statement transactions…</p>}
         {file.error && <p className="panel-state error-message" role="alert">{file.error}</p>}
-        {file.data && <><ExtractedStatementSummary data={file.data} /><ExtractedTransactions data={file.data} onCategorySaved={onSaved} /><ExtractedDepositStatement data={file.data} categories={categories} onCategorySaved={onSaved} /><details><summary className="raw-json-heading">View JSON</summary><pre className="statement-json">{JSON.stringify(file.data, null, 2)}</pre></details></>}
+        {file.data && <>
+          <h2>{statementLabel(file)}</h2>
+          <p>{String(file.data.period_start ?? '')} – {String(file.data.period_end ?? '')}</p>
+          <div className="table-shell"><table><thead><tr><th>Date</th><th>Description / category</th><th>Amount</th></tr></thead>
+            <tbody>{statementTransactions(file.data).map((transaction, index) => <tr key={canonicalTransactionId(transaction.transaction_id) || String(transaction.id ?? index)}>
+              <td>{String(transaction.transaction_date ?? '')}</td>
+              <td>{String(transaction.description ?? '')}<TransactionCategorySelect
+                transactionId={canonicalTransactionId(transaction.transaction_id)} numericId={transaction.id}
+                description={String(transaction.description ?? '')} categoryId={transaction.category_id}
+                categoryName={typeof transaction.category === 'string' ? transaction.category : ''}
+                parentCategory={transaction.parent_category} merchant={transaction.merchant}
+                categories={categories} onSaved={onSaved} /></td>
+              <td>{typeof transaction.amount === 'number' ? currency.format(transaction.amount) : 'Amount unavailable'}</td>
+            </tr>)}</tbody></table></div>
+          {statementTransactions(file.data).length === 0 && <p className="panel-state">No imported transactions were returned for this statement.</p>}
+        </>}
       </div>
     </section>
   </>;
